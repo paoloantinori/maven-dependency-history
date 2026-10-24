@@ -1,0 +1,90 @@
+{
+  "schema": "mdi.helper-dependencies/2",
+  "description": "Pinned runtime closure of the mdi usage helper. Identities only: this manifest carries no host paths and no defaults; the jars themselves are supplied explicitly via build_local.py --dependency-dir. License texts of kind \"vendored-file\" live in LICENSES/ next to this manifest, addressed by manifest-relative path and sha256-pinned like the jars; the builder copies them into the package without any network access.",
+  "closure_note": "analyzer 1.17.2 is declared directly; its published POM declares org.ow2.asm:asm:9.10.1 (compile scope); gson 2.14.0 is declared directly and its published POM declares error_prone_annotations 2.48.0 (compile scope). Closure observed in the pinned dependency directory and verified by sha256 on 2026-09-11; no other jars are on the helper classpath.",
+  "dependencies": [
+    {
+      "coordinates": "org.apache.maven.shared:maven-dependency-analyzer:1.17.2",
+      "filename": "maven-dependency-analyzer-1.17.2.jar",
+      "sha256": "f4d83b15827ca61325718a5e80f57205da0567ab311bf0ec1646c8106f78255d",
+      "pom_sha256": "160f890cc71ee994c22f66cd8f94f52bb2de50606a0d9a71b68a907086d1dea8",
+      "license": {
+        "name": "Apache-2.0",
+        "declared_in": "the artifact itself: the published POM has no <licenses> element, and the jar embeds the full Apache License 2.0 text plus a NOTICE",
+        "texts": {
+          "license": {
+            "kind": "jar-entry",
+            "entry": "META-INF/LICENSE",
+            "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+            "verified_against": "byte-identical to the LICENSE file of the exact-tag source checkout (git tag maven-dependency-analyzer-1.17.2)"
+          },
+          "notice": {
+            "kind": "jar-entry",
+            "entry": "META-INF/NOTICE",
+            "sha256": "4e6fe9752f1fac810d2152ef2f6850ded2bad8ed1f46c39f60e98a7268bb98f9"
+          }
+        }
+      }
+    },
+    {
+      "coordinates": "org.ow2.asm:asm:9.10.1",
+      "filename": "asm-9.10.1.jar",
+      "sha256": "ed825d10ab1399c8c0cb669e688cf0c8c82629b4c8399b58352b68e92ca10fcb",
+      "pom_sha256": "e1b1c3832ca3ac0a9e563c405f4c760118b5556a4920daee14058886197e094d",
+      "license": {
+        "name": "BSD-3-Clause",
+        "declared_in": "published POM <licenses> element, url https://asm.ow2.io/license.html",
+        "texts": {
+          "license": {
+            "kind": "vendored-file",
+            "path": "LICENSES/asm-9.10.1-BSD-3-Clause.txt",
+            "sha256": "293b6af371eee28b0ff16f0334ea19e20a3d5522143faa4b95b346855507879a",
+            "source_url": "https://gitlab.ow2.org/asm/asm/-/raw/ASM_9_10_1/LICENSE.txt",
+            "retrieved_utc": "2026-09-11",
+            "provenance": "exact-tag source of the pinned artifact, retrieved over public HTTPS with explicit user authorization: the pinned POM <scm> declares https://gitlab.ow2.org/asm/asm/ as the official repository, and tag ASM_9_10_1 (commit 38c169b1d7609085c8fdcede23767899ae4e1d77, \"Set version to 9.10.1.\") carries this LICENSE.txt; the declared license page https://asm.ow2.io/license.html embeds the same 25-line text (whitespace-normalized identical). The jar itself embeds no license or notice text."
+          }
+        }
+      }
+    },
+    {
+      "coordinates": "com.google.code.gson:gson:2.14.0",
+      "filename": "gson-2.14.0.jar",
+      "sha256": "2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f",
+      "pom_sha256": "1fa0122c0e3733192642861c36be4c6f799a795327a23bdd2922691b6e9ba480",
+      "license": {
+        "name": "Apache-2.0",
+        "declared_in": "published POM <licenses> element, url https://www.apache.org/licenses/LICENSE-2.0.txt",
+        "texts": {
+          "license": {
+            "kind": "vendored-file",
+            "path": "LICENSES/apache-2.0.txt",
+            "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+            "source_url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+            "retrieved_utc": "2026-09-11",
+            "provenance": "canonical Apache License 2.0 text fetched over public HTTPS with explicit user authorization, from exactly the URL the published POM declares; byte-identical (same sha256) to the META-INF/LICENSE entry embedded in the pinned analyzer jar. The gson jar embeds no license and no NOTICE entry anywhere."
+          }
+        }
+      }
+    },
+    {
+      "coordinates": "com.google.errorprone:error_prone_annotations:2.48.0",
+      "filename": "error_prone_annotations-2.48.0.jar",
+      "sha256": "b49c5c958316ed67a09c699dda9aa749caf434d51d863dea599ef36a49b9c855",
+      "pom_sha256": "189e09ad0489c325e90daaa9d5c8f406330602fa366609bca07cbcdad03ab9da",
+      "license": {
+        "name": "Apache-2.0",
+        "declared_in": "published POM <licenses> element (spelled \"Apache 2.0\"), url http://www.apache.org/licenses/LICENSE-2.0.txt",
+        "texts": {
+          "license": {
+            "kind": "vendored-file",
+            "path": "LICENSES/apache-2.0.txt",
+            "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+            "source_url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+            "retrieved_utc": "2026-09-11",
+            "provenance": "the published POM declares the same canonical Apache file over http://; retrieval used the https:// upgrade of that exact URL, with explicit user authorization, and yielded the byte-identical canonical text pinned here (same file as gson). The error_prone_annotations jar embeds no license and no NOTICE entry anywhere."
+          }
+        }
+      }
+    }
+  ]
+}

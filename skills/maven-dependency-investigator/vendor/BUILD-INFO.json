@@ -1,0 +1,100 @@
+{
+  "schema": "mdi.helper-build-info/1",
+  "helper_source": {
+    "path": "src/main/java/mdi/UsageHelper.java",
+    "sha256": "e6dfeca3e1623c3f208a6708ff697392be448997d5a960b427a4ff31c08a55c9"
+  },
+  "manifest": {
+    "path": "DEPENDENCIES.json",
+    "sha256": "1f9cb0912fea4564669c7c201b0378c77940f6c631a3306f3473498f8743bcf0"
+  },
+  "javac": {
+    "path": "/home/pantinor/.sdkman/candidates/java/current/bin/javac",
+    "version_output": "javac 21.0.11",
+    "classpath_order": [
+      "maven-dependency-analyzer-1.17.2.jar",
+      "asm-9.10.1.jar",
+      "gson-2.14.0.jar",
+      "error_prone_annotations-2.48.0.jar"
+    ],
+    "env_keys": [
+      "PATH",
+      "LANG",
+      "LC_ALL"
+    ]
+  },
+  "java": {
+    "path": "/home/pantinor/.sdkman/candidates/java/current/bin/java",
+    "version_output": "openjdk 21.0.11 2026-04-21 LTS\nOpenJDK Runtime Environment Temurin-21.0.11+10 (build 21.0.11+10-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.11+10 (build 21.0.11+10-LTS, mixed mode, sharing)"
+  },
+  "python": {
+    "version": "3.14.7 (main, Aug  5 2026, 10:29:49) [GCC 13.3.0]",
+    "zlib_version": "1.3.1.zlib-ng",
+    "zlib_runtime_version": "1.3.1.zlib-ng"
+  },
+  "flags": [
+    "--release",
+    "17",
+    "-encoding",
+    "UTF-8"
+  ],
+  "inputs": [
+    {
+      "filename": "maven-dependency-analyzer-1.17.2.jar",
+      "sha256": "f4d83b15827ca61325718a5e80f57205da0567ab311bf0ec1646c8106f78255d"
+    },
+    {
+      "filename": "asm-9.10.1.jar",
+      "sha256": "ed825d10ab1399c8c0cb669e688cf0c8c82629b4c8399b58352b68e92ca10fcb"
+    },
+    {
+      "filename": "gson-2.14.0.jar",
+      "sha256": "2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f"
+    },
+    {
+      "filename": "error_prone_annotations-2.48.0.jar",
+      "sha256": "b49c5c958316ed67a09c699dda9aa749caf434d51d863dea599ef36a49b9c855"
+    }
+  ],
+  "vendored_license_texts": [
+    {
+      "dependency": "asm-9.10.1.jar",
+      "role": "license",
+      "path": "LICENSES/asm-9.10.1-BSD-3-Clause.txt",
+      "sha256": "293b6af371eee28b0ff16f0334ea19e20a3d5522143faa4b95b346855507879a"
+    },
+    {
+      "dependency": "gson-2.14.0.jar",
+      "role": "license",
+      "path": "LICENSES/apache-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "dependency": "error_prone_annotations-2.48.0.jar",
+      "role": "license",
+      "path": "LICENSES/apache-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  ],
+  "outputs": {
+    "helper.jar": "ab72fe70626b57b7e09431adeb392beb265662eb211b7d80fb8668dbcb3284d7",
+    "lib": {
+      "lib/maven-dependency-analyzer-1.17.2.jar": "f4d83b15827ca61325718a5e80f57205da0567ab311bf0ec1646c8106f78255d",
+      "lib/asm-9.10.1.jar": "ed825d10ab1399c8c0cb669e688cf0c8c82629b4c8399b58352b68e92ca10fcb",
+      "lib/gson-2.14.0.jar": "2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f",
+      "lib/error_prone_annotations-2.48.0.jar": "b49c5c958316ed67a09c699dda9aa749caf434d51d863dea599ef36a49b9c855"
+    },
+    "licenses": {
+      "licenses/maven-dependency-analyzer-1.17.2/LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "licenses/maven-dependency-analyzer-1.17.2/NOTICE": "4e6fe9752f1fac810d2152ef2f6850ded2bad8ed1f46c39f60e98a7268bb98f9",
+      "licenses/asm-9.10.1/LICENSE": "293b6af371eee28b0ff16f0334ea19e20a3d5522143faa4b95b346855507879a",
+      "licenses/gson-2.14.0/LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "licenses/error_prone_annotations-2.48.0/LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  },
+  "license_blockers": [],
+  "determinism": {
+    "helper.jar": "sorted entry order, fixed 1980-01-01T00:00:00 entry timestamps, fixed 0644 permissions, no wall-clock or toolchain data inside the jar",
+    "scope": "byte-identical for identical source, pinned inputs and toolchain (compiler and compression implementation, see python.zlib fields); cross-JDK byte identity is NOT claimed"
+  }
+}
