@@ -116,6 +116,24 @@ def versions(repo, *, group_id=None, artifact_id=None, tree_json=None):
     """
     head_poms = _git(repo, "ls-files", "*pom.xml", "pom.xml").decode(
         "utf-8", errors="surrogateescape").splitlines()
+    # Read root POM properties as the base for resolving placeholders across
+    # all module POMs; module-local properties override root ones.
+    root_props = {}
+    root_pom = _pom_at(repo, "HEAD", "pom.xml")
+    if root_pom is not None:
+        try:
+            elem = parse_xml(root_pom, limits=Limits(xml_bytes=_MAX_XML))
+            ns = elem.tag[1:].partition("}")[0] if elem.tag.startswith("{") else ""
+            for child in elem:
+                if not isinstance(child.tag, str):
+                    continue
+                child_ns = child.tag[1:].partition("}")[0] if child.tag.startswith("{") else ""
+                if child_ns == ns and child.tag.partition("}")[2] == "properties":
+                    for prop in child:
+                        if isinstance(prop.tag, str):
+                            root_props[prop.tag.partition("}")[2]] = (prop.text or "").strip()
+        except UnsafeXML:
+            pass
     landscape = {}
     for pom in head_poms:
         blob = _pom_at(repo, "HEAD", pom)
@@ -126,6 +144,17 @@ def versions(repo, *, group_id=None, artifact_id=None, tree_json=None):
         except UnsafeXML:
             continue
         ns = elem.tag[1:].partition("}")[0] if elem.tag.startswith("{") else ""
+        props = dict(root_props)
+        for child in elem:
+            if not isinstance(child.tag, str):
+                continue
+            child_ns = child.tag[1:].partition("}")[0] if child.tag.startswith("{") else ""
+            if child_ns != ns:
+                continue
+            if child.tag.partition("}")[2] == "properties":
+                for prop in child:
+                    if isinstance(prop.tag, str):
+                        props[prop.tag.partition("}")[2]] = (prop.text or "").strip()
         module = str(Path(pom).parent) if Path(pom).parent != Path(".") else "."
         for dep in _iter_dependencies(elem, ns):
             g = dep.get("groupId", "")
@@ -135,13 +164,14 @@ def versions(repo, *, group_id=None, artifact_id=None, tree_json=None):
                 continue
             if group_id and group_id not in g:
                 continue
+            resolved = v
+            if resolved and resolved.startswith("${") and resolved.endswith("}"):
+                resolved = props.get(resolved[2:-1], v)
             ga = f"{g}:{a}"
-            placement = "direct"
-            # Check if this is inside a dependencyManagement block
-            # (simplified: we lose profile nesting here but gain speed)
             landscape.setdefault(ga, []).append({
-                "module": module, "version": v, "placement": placement,
-                "declared": True,
+                "module": module, "version": resolved,
+                "version_placeholder": v if v != resolved else None,
+                "placement": "direct", "declared": True,
             })
     # If a tree JSON is provided, label transitives
     if tree_json:

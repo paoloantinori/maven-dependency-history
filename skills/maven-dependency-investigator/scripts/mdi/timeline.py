@@ -108,18 +108,46 @@ def _pom_at(repo, commit, pom_path):
     return outcome.stdout
 
 
+def _extract_properties(elem, ns):
+    """Extract the <properties> section as a flat dict."""
+    props = {}
+    for child in elem:
+        if not isinstance(child.tag, str):
+            continue
+        child_ns = child.tag[1:].partition("}")[0] if child.tag.startswith("{") else ""
+        if child_ns != ns or child.tag.partition("}")[2] != "properties":
+            continue
+        for prop in child:
+            if isinstance(prop.tag, str):
+                props[prop.tag.partition("}")[2]] = (prop.text or "").strip()
+    return props
+
+
+def _resolve_placeholder(text, props, _depth=0):
+    """Replace ${name} placeholders with property values, max 5 hops."""
+    if _depth > 5 or not text or not text.startswith("${"):
+        return text
+    name = text[2:-1] if text.endswith("}") else text[2:]
+    value = props.get(name)
+    if value is None:
+        return text
+    return _resolve_placeholder(value, props, _depth + 1)
+
+
 def _declaration_entries(pom_bytes, group_id, artifact_id, *, limits):
     """Namespace-aware declarations of one coordinate in one POM's bytes.
 
     Returns a list of placement records: management, build-plugin or project
     placement, profile id when inside a profile, and the version text
-    verbatim (None when the version element is absent).
+    resolved through Maven properties when possible (the raw placeholder is
+    kept as version_placeholder when it differs).
     """
     try:
         elem = parse_xml(pom_bytes, limits=Limits(xml_bytes=limits))
     except UnsafeXML:
         return None  # unparseable at this commit: the event stays unknown
     ns = elem.tag[1:].partition("}")[0] if elem.tag.startswith("{") else ""
+    props = _extract_properties(elem, ns)
     entries = []
 
     def _local(tag):
@@ -153,11 +181,13 @@ def _declaration_entries(pom_bytes, group_id, artifact_id, *, limits):
                         elif local == "version":
                             v = text
                     if a and artifact_id in a and (group_id is None or g == group_id):
+                        resolved = _resolve_placeholder(v, props)
                         entries.append({
                             "management": management, "profile": profile,
-                            "plugin": plugin, "version": v,
+                            "plugin": plugin, "version": resolved,
                             "locator": child_path,
                             "placement": "managed" if management else "direct",
+                            "version_placeholder": v if v != resolved else None,
                         })
             elif name == "dependencyManagement":
                 for deps in child:
@@ -178,11 +208,13 @@ def _declaration_entries(pom_bytes, group_id, artifact_id, *, limits):
                                 elif local == "version":
                                     v = text
                             if a and artifact_id in a and (group_id is None or g == group_id):
+                                resolved = _resolve_placeholder(v, props)
                                 entries.append({
                                     "management": True, "profile": profile,
-                                    "plugin": None, "version": v,
+                                    "plugin": None, "version": resolved,
                                     "locator": f"{child_path}/dependencies/dependency",
                                     "placement": "managed",
+                                    "version_placeholder": v if v != resolved else None,
                                 })
             elif name == "profiles":
                 for prof in child:
