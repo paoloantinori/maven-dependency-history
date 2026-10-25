@@ -348,12 +348,20 @@ def release_coverage(repo, group_id, artifact_id, *, limits=None):
     if len(tags) > limits.max_tags:
         raise TimelineError(
             f"{len(tags)} tags found, over the bound of {limits.max_tags}")
-    # POMs that declare the coordinate today, plus any POM path that ever
-    # appeared in the pickaxe set (historical declarations).
+    # POMs that declare the coordinate at HEAD, plus any POM path that
+    # ever appeared in the pickaxe set (historical declarations).
+    pickaxe = _pickaxe_commits(repo, artifact_id)
+    historical_poms = set()
+    for record in pickaxe:
+        historical_poms.update(_changed_poms(repo, record["commit"]))
     head_poms = _git(repo, "ls-files", "*pom.xml", "pom.xml").decode(
         "utf-8", errors="surrogateescape").splitlines()
+    all_poms = sorted(set(head_poms) | historical_poms)
+    if len(all_poms) > limits.max_poms:
+        raise TimelineError(
+            f"{len(all_poms)} POM files to check, over the bound of {limits.max_poms}")
     declaring = []
-    for pom in head_poms[:limits.max_poms]:
+    for pom in all_poms:
         current = _pom_at(repo, "HEAD", pom)
         if current is None:
             continue
@@ -361,8 +369,6 @@ def release_coverage(repo, group_id, artifact_id, *, limits=None):
                                        limits=limits.max_xml_bytes)
         if entries:
             declaring.append(pom)
-    if len(head_poms) > limits.max_poms:
-        raise TimelineError(f"checkout holds {len(head_poms)} POM files, over the bound")
     releases = []
     for tag in tags:
         entry = {"tag": tag, "declarations": [], "status": "absent"}

@@ -199,7 +199,7 @@ public final class UsageHelper {
                     // variant is enumerated, never guessed.
                     try {
                         deriveVersionedViews(in);
-                    } catch (ValidationException e) {
+                    } catch (ValidationException | IOException e) {
                         in.analyzed = false;
                         in.derivedJars.clear();
                         in.derivedVersions.clear();
@@ -215,18 +215,22 @@ public final class UsageHelper {
             }
         }
 
-        List<Map<String, String>> refs = analyze(inputs);
-
-        for (Input in : inputs) {
-            for (Path derived : in.derivedJars) {
-                try {
-                    Files.deleteIfExists(derived);
-                } catch (IOException ignored) {
-                    // best effort only: surviving derived jars surface as
-                    // staging leftovers through the pipeline's own accounting
+        List<Map<String, String>> refs;
+        try {
+            refs = analyze(inputs);
+        } finally {
+            for (Input in : inputs) {
+                for (Path derived : in.derivedJars) {
+                    try {
+                        Files.deleteIfExists(derived);
+                    } catch (IOException ignored) {
+                        // best effort only: surviving derived jars surface
+                        // as staging leftovers via the pipeline's accounting
+                    }
                 }
             }
         }
+
 
         Map<String, List<String>> owners = new TreeMap<>();
         for (Input in : inputs) {

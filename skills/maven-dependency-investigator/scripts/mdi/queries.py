@@ -69,9 +69,11 @@ def conflicts(tree_json_bytes):
     provenance = {field: None for field in PROVENANCE_FIELDS}
     provenance["producer"] = "maven-dependency-plugin"
     provenance["version"] = "3.11.0"
+    # verbose=True is required: mediated/losing versions only appear in
+    # the verbose tree; the nonverbose JSON has one version per GA.
     try:
         imported = import_dependency_tree(tree_json_bytes, provenance=provenance,
-                                          verbose=False)
+                                          verbose=True)
     except MavenImportError as exc:
         raise TimelineError(f"tree JSON rejected ({exc.code}): {exc}") from exc
     nodes = imported["evidence"]["nodes"]
@@ -96,8 +98,9 @@ def conflicts(tree_json_bytes):
         "schema": PRODUCER,
         "conflicts": found,
         "total": len(found),
-        "scope": "version mediations present in this one tree; the tree is a"
-                 " snapshot of one resolution at one point in time",
+        "scope": "version mediations visible in a verbose tree; a nonverbose"
+                 " tree JSON cannot show them (this command requires verbose"
+                 " tree output)",
     }
 
 
@@ -254,7 +257,13 @@ def usage(jar_path, classes_path, *, scope="production", checkout=None):
     checkout = checkout or os.path.dirname(classes_path)
     jar_dir = os.path.dirname(str(jar_path))
     # find a common ancestor that contains both, or fall back to the deeper one
-    common = os.path.commonpath([checkout, jar_dir]) if checkout != jar_dir else checkout
+    try:
+        common = os.path.commonpath([checkout, jar_dir]) if checkout != jar_dir else checkout
+    except ValueError:
+        raise TimelineError(
+            f"cannot determine a common directory for the classes path"
+            f" ({checkout!r}) and the jar path ({jar_dir!r}); they are on"
+            f" disjoint trees")
     with tempfile.TemporaryDirectory(prefix="mdi-usage-query-") as staging:
         result = inspect_usage(common, classes_path, [str(jar_path)],
                                scope=scope, staging_base=staging,
@@ -345,6 +354,12 @@ def orphans(repo, classes_path, *, maven_repo=None):
                     referenced_jars.add(ga)
         for ga in sorted(located):
             if ga not in referenced_jars:
+                reason = ("no static references from project classes")
+                if ga not in {jars_found[i] for i in range(min(len(jars_found), 20))}:
+                    reason = "jar beyond the 20-jar helper bound; not checked"
+                orphans.append({"coordinate": ga, "version": declared[ga].get("version", ""),
+                                "reason": reason,
+                                "jar": located[ga]})
                 orphans.append({"coordinate": ga, "version": declared[ga].get("version", ""),
                                 "reason": "no static references from project classes",
                                 "jar": located[ga]})

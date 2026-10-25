@@ -2394,7 +2394,7 @@ def _auto_import_tree_snapshot(store, current, record, result, document):
                 "revision": persisted["revision"],
                 "tree_mode": "nonverbose",
                 "provenance_attestation": "executor-recorded"}
-    except BaseException as exc:
+    except Exception as exc:
         return {"recorded": False,
                 "reason": f"snapshot recording failed: {type(exc).__name__}: {_clean(exc)}"}
 
@@ -2560,6 +2560,10 @@ def _cmd_execute(args):
                        "approval is always a real host approval")
     if args.approval_file is not None:
         approval = _load_approval(args.approval_file)
+    elif kind == "maven" and "--output-overwrite" in record["scope"].get("argv", []):
+        raise CliError(
+            "output-overwrite proposals always require explicit host approval; "
+            "supply --approval-file even under the standing policy")
     elif kind in ("maven", "advisory"):
         # Maintainer standing policy (2026-10-25): diagnostic operations never
         # pause for approval. The synthesized record is labeled as policy, is

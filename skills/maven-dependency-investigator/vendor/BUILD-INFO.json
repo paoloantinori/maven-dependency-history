@@ -2,7 +2,7 @@
   "schema": "mdi.helper-build-info/1",
   "helper_source": {
     "path": "src/main/java/mdi/UsageHelper.java",
-    "sha256": "0dcacf50177b8b1b73cd5dcb9ab6b8734bc4b1ae6c9f06d7249d35c6ad4a6eed"
+    "sha256": "1d340e9c93e8cc96cfbe8c04898d7433bfd107b2939e25f5aa70e9d235036688"
   },
   "manifest": {
     "path": "DEPENDENCIES.json",
@@ -77,7 +77,7 @@
     }
   ],
   "outputs": {
-    "helper.jar": "0c890a56d4a761027c33a56df7e68581b7e1231dd5684b8ec70867f89a56b5d8",
+    "helper.jar": "3fca4b15437dd90af1cd624466758c3c7252c82258b6615375e7f2a2a665722f",
     "lib": {
       "lib/maven-dependency-analyzer-1.17.2.jar": "f4d83b15827ca61325718a5e80f57205da0567ab311bf0ec1646c8106f78255d",
       "lib/asm-9.10.1.jar": "ed825d10ab1399c8c0cb669e688cf0c8c82629b4c8399b58352b68e92ca10fcb",
