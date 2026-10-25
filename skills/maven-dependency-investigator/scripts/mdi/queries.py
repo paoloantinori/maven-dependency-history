@@ -131,9 +131,9 @@ def versions(repo, *, group_id=None, artifact_id=None, tree_json=None):
             g = dep.get("groupId", "")
             a = dep.get("artifactId", "")
             v = dep.get("version", "")
-            if artifact_id and a != artifact_id:
+            if artifact_id and artifact_id not in a:
                 continue
-            if group_id and g != group_id:
+            if group_id and group_id not in g:
                 continue
             ga = f"{g}:{a}"
             placement = "direct"

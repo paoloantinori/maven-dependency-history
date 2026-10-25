@@ -152,7 +152,7 @@ def _declaration_entries(pom_bytes, group_id, artifact_id, *, limits):
                             a = text
                         elif local == "version":
                             v = text
-                    if a == artifact_id and (group_id is None or g == group_id):
+                    if a and artifact_id in a and (group_id is None or g == group_id):
                         entries.append({
                             "management": management, "profile": profile,
                             "plugin": plugin, "version": v,
@@ -177,7 +177,7 @@ def _declaration_entries(pom_bytes, group_id, artifact_id, *, limits):
                                     a = text
                                 elif local == "version":
                                     v = text
-                            if a == artifact_id and (group_id is None or g == group_id):
+                            if a and artifact_id in a and (group_id is None or g == group_id):
                                 entries.append({
                                     "management": True, "profile": profile,
                                     "plugin": None, "version": v,
@@ -309,9 +309,9 @@ def inclusion_chain(tree_json_bytes, group_id, artifact_id):
     paths = []
     for node in nodes:
         coords = node.get("coordinates", {})
-        if coords.get("artifactId") != artifact_id:
+        if artifact_id and artifact_id not in coords.get("artifactId", ""):
             continue
-        if group_id is not None and coords.get("groupId") != group_id:
+        if group_id and group_id not in coords.get("groupId", ""):
             continue
         chain = []
         for segment in node.get("path", []):
