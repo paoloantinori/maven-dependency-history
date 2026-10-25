@@ -1,0 +1,9 @@
+[project]
+name = "mdi-mcp-server"
+version = "0.1.0"
+description = "MCP stdio server exposing maven-dependency-investigator queries as native tools"
+requires-python = ">=3.12"
+dependencies = ["mcp>=2.0.0"]
+
+[project.scripts]
+mdi-mcp = "mdi.mcp_server:main"
