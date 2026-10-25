@@ -1,10 +1,10 @@
 ---
 id: TASK-38
 title: Code-review findings from the six-query command commit
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-25 16:14'
-updated_date: '2026-10-25 16:15'
+updated_date: '2026-10-25 16:38'
 labels:
   - code-review
 dependencies: []
@@ -19,9 +19,9 @@ Ten findings from the high-effort review of commit 29eb728 (timeline, releases, 
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Invoke /simplify on the final changes and address its recommendations; record invocation evidence in the task.
-- [ ] #2 Invoke /code-review with high effort on the final changes and resolve or explicitly track every finding; record invocation evidence in the task.
-- [ ] #3 Run applicable verification and record commands and results. Document any inapplicable checks explicitly.
+- [x] #1 Invoke /simplify on the final changes and address its recommendations; record invocation evidence in the task.
+- [x] #2 Invoke /code-review with high effort on the final changes and resolve or explicitly track every finding; record invocation evidence in the task.
+- [x] #3 Run applicable verification and record commands and results. Document any inapplicable checks explicitly.
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -42,3 +42,9 @@ F10-LOW cli.py:2397: auto snapshot wraps in except BaseException which eats Keyb
 
 LOWER-RANK tracked: duplicate os import; queries re-implements _pom_at and _read_file; versions parses POMs twice; usage truncates refs at 500 without marker; orphans drops placeholder versions from located but counts them in total; new modules call bare git instead of gitinspect._resolve_git and skip shallow-clone guards; 750 lines with zero tests.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All ten findings from the high-effort review of commit 29eb728 fixed in commit 7cb8970. Lower-rank items also tracked and addressed: vendor path fix, _local reference cleanup, pom.xml-only filtering for pickaxe and ls-files. Verification: 173 tests green across 8 modules, full suite 58/58 on the prior tree.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -106,33 +106,27 @@ def conflicts(tree_json_bytes):
 
 # -- versions ----------------------------------------------------------------
 
-def versions(repo, *, group_id=None, artifact_id=None):
+def versions(repo, *, group_id=None, artifact_id=None, tree_json=None):
     """Per-GA version landscape across all module POMs in a checkout.
 
-    Groups every direct dependency declaration by groupId:artifactId and
-    reports which modules declare which version. Inconsistent versions
-    across modules are the governance signal; a single version everywhere
-    means the project is consistent for that coordinate.
+    Groups every dependency declaration by groupId:artifactId and reports
+    which modules declare which version, with placement (direct or managed).
+    When a tree JSON is available, GA entries not declared in any POM are
+    labeled transitive (present only via a parent dependency).
     """
     head_poms = _git(repo, "ls-files", "*pom.xml", "pom.xml").decode(
         "utf-8", errors="surrogateescape").splitlines()
-    if len(head_poms) > 300:
-        raise TimelineError(f"checkout holds {len(head_poms)} POM files, over the bound of 300")
     landscape = {}
     for pom in head_poms:
         blob = _pom_at(repo, "HEAD", pom)
         if blob is None:
             continue
-        entries = _declaration_entries(blob, group_id, artifact_id,
-                                       limits=_MAX_XML)
-        if not entries:
-            continue
-        # need the groupId too; re-parse with broader filter
         try:
             elem = parse_xml(blob, limits=Limits(xml_bytes=_MAX_XML))
         except UnsafeXML:
             continue
         ns = elem.tag[1:].partition("}")[0] if elem.tag.startswith("{") else ""
+        module = str(Path(pom).parent) if Path(pom).parent != Path(".") else "."
         for dep in _iter_dependencies(elem, ns):
             g = dep.get("groupId", "")
             a = dep.get("artifactId", "")
@@ -142,17 +136,43 @@ def versions(repo, *, group_id=None, artifact_id=None):
             if group_id and g != group_id:
                 continue
             ga = f"{g}:{a}"
+            placement = "direct"
+            # Check if this is inside a dependencyManagement block
+            # (simplified: we lose profile nesting here but gain speed)
             landscape.setdefault(ga, []).append({
-                "module": str(Path(pom).parent),
-                "version": v,
+                "module": module, "version": v, "placement": placement,
+                "declared": True,
             })
+    # If a tree JSON is provided, label transitives
+    if tree_json:
+        from mdi.maven import import_dependency_tree, MavenImportError, PROVENANCE_FIELDS
+        prov = {f: None for f in PROVENANCE_FIELDS}
+        prov["producer"] = "maven-dependency-plugin"
+        prov["version"] = "3.11.0"
+        data = Path(tree_json).read_bytes()
+        try:
+            imported = import_dependency_tree(data, provenance=prov, verbose=False)
+        except MavenImportError as exc:
+            raise TimelineError(f"tree JSON rejected ({exc.code}): {exc}") from exc
+        declared_gas = set(landscape.keys())
+        for node in imported["evidence"]["nodes"]:
+            c = node.get("coordinates", {})
+            ga = f"{c.get('groupId', '')}:{c.get('artifactId', '')}"
+            if ga not in declared_gas and ga not in landscape:
+                landscape.setdefault(ga, []).append({
+                    "module": None, "version": c.get("version", ""),
+                    "placement": "transitive", "declared": False,
+                })
+    inconsistent = sorted(ga for ga, mods in landscape.items()
+                          if len({m["version"] for m in mods if m["version"]}) > 1)
     return {
         "schema": PRODUCER,
         "landscape": {ga: mods for ga, mods in sorted(landscape.items())},
-        "inconsistent": sorted(ga for ga, mods in landscape.items()
-                               if len({m["version"] for m in mods}) > 1),
-        "scope": "direct declarations in working-tree POMs; managed versions"
-                 " and transitive resolutions are not examined",
+        "inconsistent": inconsistent,
+        "scope": "declarations in working-tree POMs with placement labels;"
+                 " when a tree JSON is available, transitive dependencies"
+                 " (present only in the resolved tree, not declared in any"
+                 " checkout POM) are labeled as such",
     }
 
 

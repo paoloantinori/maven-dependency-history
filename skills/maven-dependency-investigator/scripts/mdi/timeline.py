@@ -79,7 +79,11 @@ def _parse_commit_line(line):
 def _pickaxe_commits(repo, artifact_id):
     """Commits that touched a line containing the artifactId declaration,
     newest first, bounded."""
-    needle = f"<artifactId>{artifact_id}</artifactId>"
+    # Search for the bare artifactId string, not the XML tag. A version
+    # change touches the <version> line, not the <artifactId> line, so the
+    # pickaxe must fire on any line mentioning the artifact. The classifier
+    # filters false positives.
+    needle = artifact_id
     raw = _git(repo, "log", "--all", "--first-parent", "--format=%H%x1f%aI%x1f%an%x1f%cI%x1f%cn%x1f%s",
                "-S", needle, "--", "*pom.xml", "pom.xml")
     commits = []
@@ -153,6 +157,7 @@ def _declaration_entries(pom_bytes, group_id, artifact_id, *, limits):
                             "management": management, "profile": profile,
                             "plugin": plugin, "version": v,
                             "locator": child_path,
+                            "placement": "managed" if management else "direct",
                         })
             elif name == "dependencyManagement":
                 for deps in child:
@@ -177,6 +182,7 @@ def _declaration_entries(pom_bytes, group_id, artifact_id, *, limits):
                                     "management": True, "profile": profile,
                                     "plugin": None, "version": v,
                                     "locator": f"{child_path}/dependencies/dependency",
+                                    "placement": "managed",
                                 })
             elif name == "profiles":
                 for prof in child:

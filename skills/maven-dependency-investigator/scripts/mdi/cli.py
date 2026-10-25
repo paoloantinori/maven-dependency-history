@@ -344,6 +344,9 @@ def _build_parser():
     versions_cmd.add_argument("--repo", required=True)
     versions_cmd.add_argument("--query",
                               help="optional groupId:artifactId to filter")
+    versions_cmd.add_argument("--tree",
+                              help="optional tree JSON; GA entries not declared"
+                                   " in any POM are labeled transitive")
 
     diff_cmd = sub.add_parser("diff",
                               help="what changed in the dependency graph between two trees")
@@ -2505,8 +2508,10 @@ def _cmd_versions(args):
     group = artifact = None
     if args.query:
         group, artifact, _ = _split_gav(args.query)
+    tree_json = getattr(args, "tree", None)
     try:
-        result = queries_module.versions(args.repo, group_id=group, artifact_id=artifact)
+        result = queries_module.versions(args.repo, group_id=group,
+                                         artifact_id=artifact, tree_json=tree_json)
     except queries_module.TimelineError as exc:
         raise CliError(f"versions query rejected: {_clean(exc)}") from exc
     return _emit(result)
