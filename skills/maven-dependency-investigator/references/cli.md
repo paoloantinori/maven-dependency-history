@@ -151,7 +151,11 @@ Download destinations must be declared one way: either `--destinations-unknown` 
 --run-dir PATH        required
 --expect-revision N   required
 --operation ID        required
---approval-file FILE  required; written by the agent after real host approval, never by the CLI
+--approval-file FILE  optional; without it, diagnostic operations (maven
+                      tree/effective-pom/classpath and advisory lookups) run
+                      under the standing policy, audited as such. A real file
+                      with approved:false denies. Raw capture approval is
+                      always a real file.
 --capture-operation ID         optional; requires --capture-approval-file
 --capture-approval-file FILE   separate actual approval for the registered capture
 ```

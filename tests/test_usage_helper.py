@@ -247,42 +247,41 @@ class UsageHelperTestCase(unittest.TestCase):
 
     # -- multi-release jars ------------------------------------------------
 
-    def test_multi_release_dependency_explicitly_unsupported(self):
+    def test_multi_release_dependency_analyzed_with_real_names_and_versions(self):
         out = self.run_ok("--root", self.root_jar, "--scope", "production",
                           "--dependency", self.dep_b, "--dependency", self.mr_jar)
         mr_path = str(self.mr_jar.resolve())
-        self.assertTrue(any(i["code"] == "unsupported-multi-release-jar"
-                            and i["input"] == mr_path for i in out["issues"]))
         mr_entry = next(e for e in out["inputs"] if e["path"] == mr_path)
-        self.assertFalse(mr_entry["analyzed"])
-        self.assertEqual(mr_entry["classes"], [])
-        self.assertEqual(mr_entry["class_count"], 0)
-        self.assertEqual(mr_entry["role"], "upstream")
+        self.assertTrue(mr_entry["analyzed"])
+        self.assertTrue(mr_entry["multi_release"])
+        self.assertEqual(mr_entry["multi_release_versions"], [17])
+        self.assertIn("17", mr_entry["versioned_classes"])
+        versioned = mr_entry["versioned_classes"]["17"]
+        self.assertTrue(any(c.endswith(".V") for c in versioned))
         self.assertIn(("com.example.A", "com.example.B"), self.pairs(out))
         names = [c for e in out["inputs"] for c in e["classes"]]
         names += [r[k] for r in out["refs"] for k in ("from_class", "to_class")]
         names += list(self.candidates(out))
         self.assertFalse([n for n in names if "META-INF" in n or "versions/17" in n])
 
-    def test_multi_release_root_also_rejected(self):
+    def test_multi_release_root_also_analyzed(self):
         out = self.run_ok("--root", self.mr_jar, "--scope", "production")
-        self.assertEqual(out["refs"], [])
-        self.assertTrue(any(i["code"] == "unsupported-multi-release-jar" for i in out["issues"]))
+        self.assertTrue(out["inputs"][0]["analyzed"])
+        self.assertTrue(out["inputs"][0]["multi_release"])
+        self.assertNotIn("unsupported-multi-release-jar",
+                         [i["code"] for i in out["issues"]])
 
-    def test_manifest_only_multi_release_jar_reports_observed_zero(self):
+    def test_manifest_only_multi_release_jar_analyzed_normally(self):
         out = self.run_ok("--root", self.root_jar, "--scope", "production",
                           "--dependency", self.dep_b, "--dependency", self.mr_manifest_jar)
         mm_path = str(self.mr_manifest_jar.resolve())
-        matches = [i for i in out["issues"]
-                   if i["code"] == "unsupported-multi-release-jar" and i["input"] == mm_path]
-        self.assertEqual(len(matches), 1)
-        message = matches[0]["message"]
-        self.assertIn("0 META-INF/versions/ entries observed", message)
-        self.assertIn("Multi-Release: true", message)
-        self.assertNotIn("1 META-INF/versions/ entries", message)  # no fabricated count
         mm_entry = next(e for e in out["inputs"] if e["path"] == mm_path)
-        self.assertFalse(mm_entry["analyzed"])
-        self.assertEqual(mm_entry["classes"], [])
+        self.assertTrue(mm_entry["analyzed"])
+        self.assertTrue(mm_entry["multi_release"])
+        self.assertEqual(mm_entry["multi_release_versions"], [])
+        self.assertEqual(mm_entry["versioned_classes"], {})
+        self.assertNotIn("unsupported-multi-release-jar",
+                         [i["code"] for i in out["issues"]])
         self.assertIn(("com.example.A", "com.example.B"), self.pairs(out))
 
     def test_multi_release_exploded_directory_unsupported(self):

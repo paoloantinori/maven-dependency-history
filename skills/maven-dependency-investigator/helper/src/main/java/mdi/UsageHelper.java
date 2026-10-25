@@ -1,5 +1,6 @@
 package mdi;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.file.FileVisitResult;
@@ -11,6 +12,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.jar.JarOutputStream;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -58,13 +60,16 @@ import com.google.gson.GsonBuilder;
  *   wall-clock time, and captured output size themselves.</li>
  *   <li>Symlinks are rejected: the input path itself, and any entry found
  *   while walking a directory input (walking never follows links).</li>
- *   <li>Multi-release jars (any {@code META-INF/versions/} path, or a
- *   manifest that declares Multi-Release even with zero versioned entries)
- *   AND exploded directories containing any {@code META-INF/versions/}
- *   path are NOT analyzed: they are reported as
- *   an explicit unsupported issue with the input info preserved, because
- *   versioned entries would surface as misleadingly prefixed class names
- *   such as {@code META-INF.versions.17.com.example.V}.</li>
+ *   <li>Multi-release jars ARE analyzed, through derived views: a baseline
+ *   jar without {@code META-INF/versions/} plus one jar per declared version
+ *   with the version prefix stripped, so every class keeps its real name.
+ *   The input report lists the declared versions and the classes each
+ *   version contributes ({@code multi_release_versions},
+ *   {@code versioned_classes}); identical edges collapse to one. Directory
+ *   inputs carrying any {@code META-INF/versions/} path, and jars whose
+ *   version directories are malformed or whose derived views exceed twice
+ *   the input size, are NOT analyzed: they are reported as an explicit
+ *   unsupported issue with the input info preserved.</li>
  *   <li>Ownership is never resolved by first wins: every referenced target
  *   lists ALL input paths whose class index contains it. An empty candidate
  *   list means unowned or external, and the ref is still retained.</li>
@@ -116,6 +121,11 @@ public final class UsageHelper {
         boolean analyzed = true;
         long sizeBytes;
         Set<String> classes = new TreeSet<>();
+        boolean multiRelease;
+        List<Integer> mrVersions = new ArrayList<>();
+        List<Path> derivedJars = new ArrayList<>();
+        List<Integer> derivedVersions = new ArrayList<>();
+        Map<Integer, Set<String>> versionedClasses = new TreeMap<>();
 
         Input(Path canonical, String role, String kind) {
             this.canonical = canonical;
@@ -169,28 +179,54 @@ public final class UsageHelper {
                 throw budget("total preflight class count", totalPreflightClasses, totalLimit);
             }
             if (pf.versionedEntries > 0 || pf.manifestMultiRelease) {
-                in.analyzed = false;
+                in.multiRelease = true;
                 boolean jar = in.kind.equals("jar");
-                String detail;
-                if (pf.manifestMultiRelease && pf.versionedEntries == 0) {
-                    detail = "manifest declares Multi-Release: true with 0"
-                            + " META-INF/versions/ entries observed; any"
-                            + " versioned entries would be reported as"
-                            + " misleadingly prefixed class names";
-                } else {
-                    detail = pf.versionedEntries + " META-INF/versions/ entries"
-                            + " would be reported as misleadingly prefixed class names";
+                if (!jar) {
+                    // Staged directory roots never legitimately carry versioned
+                    // layouts; refusing stays honest for them.
+                    in.analyzed = false;
+                    issues.add(issue(
+                            "unsupported-multi-release-directory",
+                            "multi-release directory layout not analyzed: "
+                                    + pf.versionedEntries + " META-INF/versions/"
+                                    + " entries would be reported as misleadingly"
+                                    + " prefixed class names",
+                            in.canonical));
+                } else if (pf.versionedEntries > 0) {
+                    // A jar with versioned entries is analyzed through derived
+                    // jars: the baseline view and one stripped view per version,
+                    // so every class keeps its real name and each versioned
+                    // variant is enumerated, never guessed.
+                    try {
+                        deriveVersionedViews(in);
+                    } catch (ValidationException e) {
+                        in.analyzed = false;
+                        in.derivedJars.clear();
+                        in.derivedVersions.clear();
+                        in.mrVersions.clear();
+                        issues.add(issue(
+                                "unsupported-multi-release-jar",
+                                "multi-release jar not analyzed: " + e.getMessage(),
+                                in.canonical));
+                    }
                 }
-                issues.add(issue(
-                        jar ? "unsupported-multi-release-jar"
-                            : "unsupported-multi-release-directory",
-                        (jar ? "multi-release jar" : "multi-release directory layout")
-                                + " not analyzed: " + detail,
-                        in.canonical));
+                // A manifest-only Multi-Release declaration with zero versioned
+                // entries needs no derived view: the baseline is the whole jar.
             }
         }
 
         List<Map<String, String>> refs = analyze(inputs);
+
+        for (Input in : inputs) {
+            for (Path derived : in.derivedJars) {
+                try {
+                    Files.deleteIfExists(derived);
+                } catch (IOException ignored) {
+                    // best effort only: surviving derived jars surface as
+                    // staging leftovers through the pipeline's own accounting
+                }
+            }
+        }
 
         Map<String, List<String>> owners = new TreeMap<>();
         for (Input in : inputs) {
@@ -220,6 +256,15 @@ public final class UsageHelper {
             m.put("class_count", in.classes.size());
             m.put("classes", new ArrayList<>(in.classes));
             m.put("analyzed", in.analyzed);
+            if (in.multiRelease) {
+                m.put("multi_release", true);
+                m.put("multi_release_versions", new ArrayList<>(in.mrVersions));
+                Map<String, List<String>> versioned = new LinkedHashMap<>();
+                for (Map.Entry<Integer, Set<String>> e : in.versionedClasses.entrySet()) {
+                    versioned.put(String.valueOf(e.getKey()), new ArrayList<>(e.getValue()));
+                }
+                m.put("versioned_classes", versioned);
+            }
             inputMaps.add(m);
         }
 
@@ -414,27 +459,41 @@ public final class UsageHelper {
             if (!in.analyzed) {
                 continue;
             }
-            URL url = in.canonical.toUri().toURL();
-            Set<String> classes = new TreeSet<>(classIndexAnalyzer.analyze(url, noPatterns));
-            if (classes.size() > MAX_CLASSES_PER_INPUT) {
-                throw budget("class count", classes.size(), MAX_CLASSES_PER_INPUT);
-            }
-            totalClasses += classes.size();
-            if (totalClasses > totalLimit) {
-                throw budget("total class count (post-analysis defense)",
-                        totalClasses, totalLimit);
-            }
-            in.classes = classes;
+            // A multi-release jar is analyzed through its derived views: the
+            // baseline first, then one stripped view per declared version.
+            // Every class keeps its real name; versioned variants are recorded
+            // per version, and identical edges collapse into one.
+            List<Path> analysisTargets = in.derivedJars.isEmpty()
+                    ? java.util.Collections.singletonList(in.canonical)
+                    : in.derivedJars;
             Set<DependencyUsage> edges = new TreeSet<>(
                     Comparator.comparing(DependencyUsage::getUsedBy)
                             .thenComparing(DependencyUsage::getDependencyClass));
-            for (DependencyUsage usage : usageAnalyzer.analyzeUsages(url, noPatterns)) {
-                String from = usage.getUsedBy();
-                String to = usage.getDependencyClass();
-                if (from == null || to == null || from.isEmpty() || to.isEmpty()) {
-                    continue;
+            for (int t = 0; t < analysisTargets.size(); t++) {
+                URL url = analysisTargets.get(t).toUri().toURL();
+                int version = in.derivedJars.isEmpty() ? -1 : in.derivedVersions.get(t);
+                Set<String> classes = new TreeSet<>(classIndexAnalyzer.analyze(url, noPatterns));
+                if (classes.size() > MAX_CLASSES_PER_INPUT) {
+                    throw budget("class count", classes.size(), MAX_CLASSES_PER_INPUT);
                 }
-                edges.add(usage);
+                in.classes.addAll(classes);
+                if (version >= 0) {
+                    in.versionedClasses.computeIfAbsent(version, k -> new TreeSet<>())
+                            .addAll(classes);
+                }
+                for (DependencyUsage usage : usageAnalyzer.analyzeUsages(url, noPatterns)) {
+                    String from = usage.getUsedBy();
+                    String to = usage.getDependencyClass();
+                    if (from == null || to == null || from.isEmpty() || to.isEmpty()) {
+                        continue;
+                    }
+                    edges.add(usage);
+                }
+            }
+            totalClasses += in.classes.size();
+            if (totalClasses > totalLimit) {
+                throw budget("total class count (post-analysis defense)",
+                        totalClasses, totalLimit);
             }
             for (DependencyUsage edge : edges) {
                 if (refs.size() + 1 > MAX_REFS) {
@@ -451,6 +510,115 @@ public final class UsageHelper {
     }
 
     // -- small helpers ----------------------------------------------------------
+
+    /**
+     * Build the derived analysis views of a multi-release jar: one baseline
+     * jar without any {@code META-INF/versions/} entries, then one jar per
+     * declared version with that prefix stripped, so class names are real.
+     * The derived jars are sibling files of the staged input (never inside a
+     * directory root the analyzer walks) and are best-effort deleted after
+     * analysis; survivors surface as staging leftovers.
+     */
+    private static void deriveVersionedViews(Input in) throws IOException {
+        Path parent = in.canonical.getParent();
+        String base = in.canonical.getFileName().toString();
+        Path baseline = parent.resolve(base + ".mdi-baseline.jar");
+        Set<Integer> versions = new TreeSet<>();
+        try (JarFile src = new JarFile(in.canonical.toFile(), false, JarFile.OPEN_READ)) {
+            Enumeration<JarEntry> all = src.entries();
+            while (all.hasMoreElements()) {
+                String name = all.nextElement().getName();
+                if (!name.startsWith("META-INF/versions/") || name.endsWith("/")) {
+                    continue;
+                }
+                String rest = name.substring("META-INF/versions/".length());
+                if (rest.isEmpty()) {
+                    continue;
+                }
+                int slash = rest.indexOf('/');
+                String segment = slash < 0 ? rest : rest.substring(0, slash);
+                int version;
+                try {
+                    version = Integer.parseInt(segment);
+                } catch (NumberFormatException e) {
+                    throw new ValidationException(
+                            "non-numeric version directory " + segment
+                                    + " under META-INF/versions");
+                }
+                if (version < 6) {
+                    throw new ValidationException(
+                            "invalid version directory " + segment
+                                    + " under META-INF/versions");
+                }
+                versions.add(version);
+            }
+            writeDerivedJar(src, baseline, -1);
+            in.derivedJars.add(baseline);
+            in.derivedVersions.add(-1);
+            for (int version : versions) {
+                Path view = parent.resolve(base + ".mdi-v" + version + ".jar");
+                writeDerivedJar(src, view, version);
+                in.derivedJars.add(view);
+                in.derivedVersions.add(version);
+                in.mrVersions.add(version);
+            }
+        }
+        long derivedBytes = 0;
+        for (Path p : in.derivedJars) {
+            derivedBytes += Files.size(p);
+        }
+        if (derivedBytes > 2L * in.sizeBytes + 65_536L) {
+            throw new ValidationException(
+                    "derived view bytes (" + derivedBytes + ") exceed the bound of"
+                            + " twice the input size; refusing to analyze");
+        }
+    }
+
+    /** Copy the source jar entries into {@code target}: baseline (version -1)
+     * keeps everything except versioned entries; a version view keeps only
+     * that version's entries with the version prefix stripped. */
+    private static void writeDerivedJar(JarFile src, Path target, int version)
+            throws IOException {
+        try (JarOutputStream out = new JarOutputStream(
+                new BufferedOutputStream(Files.newOutputStream(target)))) {
+            Enumeration<JarEntry> all = src.entries();
+            while (all.hasMoreElements()) {
+                JarEntry entry = all.nextElement();
+                String name = entry.getName();
+                if (version < 0) {
+                    if (name.startsWith("META-INF/versions/")) {
+                        continue;
+                    }
+                    copyEntry(src, entry, name, out);
+                } else {
+                    String prefix = "META-INF/versions/" + version + "/";
+                    if (!name.startsWith(prefix)) {
+                        continue;
+                    }
+                    String stripped = name.substring(prefix.length());
+                    if (stripped.isEmpty() || stripped.startsWith("META-INF/")) {
+                        continue;
+                    }
+                    copyEntry(src, entry, stripped, out);
+                }
+            }
+        }
+    }
+
+    private static void copyEntry(JarFile src, JarEntry entry, String name,
+                                  JarOutputStream out) throws IOException {
+        JarEntry copy = new JarEntry(name);
+        copy.setTime(entry.getTime());
+        out.putNextEntry(copy);
+        try (java.io.InputStream in = src.getInputStream(entry)) {
+            byte[] buffer = new byte[32_768];
+            int read;
+            while ((read = in.read(buffer)) >= 0) {
+                out.write(buffer, 0, read);
+            }
+        }
+        out.closeEntry();
+    }
 
     private static Map<String, Object> issue(String code, String message, Path input) {
         Map<String, Object> m = new LinkedHashMap<>();

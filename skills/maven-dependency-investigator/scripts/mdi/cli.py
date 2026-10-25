@@ -299,11 +299,72 @@ def _build_parser():
                           dest="destinations_unknown")
     proposal.add_argument("--page-token")
 
-    execution = sub.add_parser("execute", help="execute one approved operation")
+    execution = sub.add_parser("execute", help="execute one operation")
     execution.add_argument("--run-dir", required=True)
     execution.add_argument("--expect-revision", required=True, type=_int_arg)
     execution.add_argument("--operation", required=True)
-    execution.add_argument("--approval-file", required=True)
+    execution.add_argument("--approval-file", required=False,
+                           help="optional host approval; without it, diagnostic "
+                                "operations run under the standing policy")
+
+    timeline_cmd = sub.add_parser("timeline",
+                                  help="when a dependency entered scope, who added it, "
+                                       "and every version change across Git history")
+    timeline_cmd.add_argument("--repo", required=True)
+    timeline_cmd.add_argument("--query", required=True,
+                              help="groupId:artifactId of the dependency to trace")
+
+    releases_cmd = sub.add_parser("releases",
+                                  help="which tagged releases carry the dependency "
+                                       "declaration, at what version")
+    releases_cmd.add_argument("--repo", required=True)
+    releases_cmd.add_argument("--query", required=True,
+                              help="groupId:artifactId of the dependency to check")
+
+    chain_cmd = sub.add_parser("chain",
+                               help="every inclusion path from the tree root to a "
+                                    "coordinate, traced from a tree JSON file")
+    chain_cmd.add_argument("--tree", required=True,
+                           help="path to the tree JSON produced by dependency:tree")
+    chain_cmd.add_argument("--query", required=True,
+                           help="groupId:artifactId of the dependency to trace")
+
+    security_cmd = sub.add_parser("security",
+                                  help="known OSV vulnerabilities for one exact coordinate")
+    security_cmd.add_argument("--query", required=True,
+                              help="groupId:artifactId:version of the dependency to check")
+
+    conflicts_cmd = sub.add_parser("conflicts",
+                                   help="version mediations in a resolved tree")
+    conflicts_cmd.add_argument("--tree", required=True,
+                               help="path to the tree JSON produced by dependency:tree")
+
+    versions_cmd = sub.add_parser("versions",
+                                  help="per-GA version landscape across all module POMs")
+    versions_cmd.add_argument("--repo", required=True)
+    versions_cmd.add_argument("--query",
+                              help="optional groupId:artifactId to filter")
+
+    diff_cmd = sub.add_parser("diff",
+                              help="what changed in the dependency graph between two trees")
+    diff_cmd.add_argument("--tree-a", required=True)
+    diff_cmd.add_argument("--tree-b", required=True)
+    diff_cmd.add_argument("--label-a", default="A")
+    diff_cmd.add_argument("--label-b", default="B")
+
+    usage_cmd = sub.add_parser("usage",
+                               help="project-class to library-class references")
+    usage_cmd.add_argument("--jar", required=True)
+    usage_cmd.add_argument("--classes", required=True)
+    usage_cmd.add_argument("--scope", default="production",
+                           choices=("production", "test"))
+
+    orphans_cmd = sub.add_parser("orphans",
+                                 help="declared dependencies with zero static references")
+    orphans_cmd.add_argument("--repo", required=True)
+    orphans_cmd.add_argument("--classes", required=True)
+    orphans_cmd.add_argument("--maven-repo",
+                             help="optional path to the local Maven repository")
     execution.add_argument("--capture-operation")
     execution.add_argument("--capture-approval-file")
     return parser
@@ -2205,8 +2266,9 @@ def _cmd_propose(args):
             "tool_identity": record["tool_identity"],
             "disclosure": record["disclosure"],
         },
-        "approval": "obtain explicit host approval for exactly this disclosed "
-                    "operation and write the approval record to a file yourself; "
+        "approval": "diagnostic operations run without an approval file under "
+                    "the standing policy; supply one only to record a real host "
+                    "approval or denial, and "
                     "this CLI never creates an approval file",
     })
 
@@ -2254,6 +2316,234 @@ def _output_report_path(argv):
     return None
 
 
+
+
+def _auto_import_tree_snapshot(store, current, record, result, document):
+    """Record the executed dependency:tree output as a same-run imported-tree
+    snapshot, so graph-history builds up without a manual import. The
+    provenance is the strongest available: the proposal's own pinned goal, a
+    record field the executor re-derived and enforced before consuming
+    consent. The snapshot never upgrades the run to verified history: it is
+    a machine-produced observation of this one execution. Any failure is
+    recorded in the returned envelope and never fails the execution."""
+    try:
+        if result["outcome"] != "succeeded":
+            return {"recorded": False, "reason": "the run outcome was not successful"}
+        argv = record["scope"]["argv"]
+        goal = argv[-1] if argv else ""
+        if not goal.startswith("org.apache.maven.plugins:maven-dependency-plugin:"):
+            return {"recorded": False, "reason": "pinned goal is not the dependency tree plugin"}
+        parts = goal.split(":")
+        if len(parts) != 4 or parts[3] != "tree":
+            return {"recorded": False, "reason": "pinned goal is not the dependency tree plugin"}
+        output_path = document.get("output_report_path")
+        if not output_path:
+            return {"recorded": False, "reason": "no output report path was pinned"}
+        try:
+            captured = capture_file(output_path, _IMPORT_MAX_BYTES)
+        except CaptureError as exc:
+            return {"recorded": False, "reason": f"cannot capture output report: {_clean(exc)}"}
+        if not captured.complete:
+            return {"recorded": False,
+                    "reason": f"output report was not captured completely: {captured.reason or 'incomplete'}"}
+        provenance = dict(_default_provenance("tree-json"))
+        provenance.update({"producer": parts[1],
+                           "version": parts[2]})
+        imported = import_dependency_tree(captured.data, provenance=provenance,
+                                          verbose=False)
+        latest = result["report"]
+        draft = copy.deepcopy(latest)
+        evidence_id = _next_evidence_id(draft)
+        generation_context = {
+            "attestation": "executor-recorded",
+            "note": "producer/version/format are attested by this run's own "
+                    "audited execution of the pinned goal, verified against the "
+                    "recorded argv before consent was consumed; the report bytes "
+                    "themselves were produced by the unsandboxed child and were "
+                    "not verified against what the pinned plugin would emit; "
+                    "not caller-attested and not independently verified",
+        }
+        record_ev = {
+            "id": evidence_id,
+            "category": _IMPORT_CATEGORIES["tree-json"],
+            "source_locator": captured.path,
+            "observed_at": imported["imported_at"],
+            "captured_identity": {"path": captured.path,
+                                  "sha256": imported["input"]["sha256"]},
+            "generation_context": generation_context,
+            "producer": parts[1],
+            "producer_version": parts[2],
+            "payload": {"import": imported,
+                        "provenance_attestation": "executor-recorded",
+                        "assumed_grammar": None,
+                        "auto_snapshot": True},
+        }
+        _append_evidence(draft, record_ev)
+        _append_stage(draft, "import-tree-json", "complete",
+                      {"currency": imported["context"]["currency"],
+                       "provenance_attestation": "executor-recorded",
+                       "assumed_grammar": None,
+                       "tree_mode": "nonverbose",
+                       "tree_mode_attestation": "executor-recorded",
+                       "current_build_attribution": "none: no current context was supplied; "
+                       "the evidence is authoritative only for the context its provenance "
+                       "records"},
+                      [], [evidence_id])
+        persisted = store.commit(draft, latest["revision"])
+        return {"recorded": True, "evidence_id": evidence_id,
+                "revision": persisted["revision"],
+                "tree_mode": "nonverbose",
+                "provenance_attestation": "executor-recorded"}
+    except BaseException as exc:
+        return {"recorded": False,
+                "reason": f"snapshot recording failed: {type(exc).__name__}: {_clean(exc)}"}
+
+
+
+
+def _split_query(query):
+    """groupId:artifactId or bare artifactId -> (group or None, artifact)."""
+    if ":" in query:
+        group, _, artifact = query.partition(":")
+        return (group or None, artifact or None)
+    return (None, query or None)
+
+
+def _cmd_timeline(args):
+    """Standalone Git-history timeline for one dependency declaration."""
+    from mdi import timeline as timeline_module
+    group, artifact = _split_query(args.query)
+    if not artifact:
+        raise CliError("--query must carry at least an artifactId")
+    try:
+        result = timeline_module.dependency_timeline(args.repo, group, artifact)
+    except timeline_module.TimelineError as exc:
+        raise CliError(f"timeline query rejected: {_clean(exc)}") from exc
+    return _emit(result)
+
+
+def _cmd_releases(args):
+    """Standalone per-tag declaration coverage for one dependency."""
+    from mdi import timeline as timeline_module
+    group, artifact = _split_query(args.query)
+    if not artifact:
+        raise CliError("--query must carry at least an artifactId")
+    try:
+        result = timeline_module.release_coverage(args.repo, group, artifact)
+    except timeline_module.TimelineError as exc:
+        raise CliError(f"releases query rejected: {_clean(exc)}") from exc
+    return _emit(result)
+
+
+def _cmd_chain(args):
+    """Standalone inclusion chain from a dependency-plugin tree JSON."""
+    from mdi import capture as capture_module
+    from mdi import timeline as timeline_module
+    group, artifact = _split_query(args.query)
+    if not artifact:
+        raise CliError("--query must carry at least an artifactId")
+    try:
+        blob = capture_module.capture_file(args.tree, 32 * 1024 * 1024)
+    except capture_module.CaptureError as exc:
+        raise CliError(f"cannot read tree file: {_clean(exc)}") from exc
+    if not blob.complete:
+        raise CliError(f"tree file was not read completely: {blob.reason or 'incomplete'}")
+    try:
+        result = timeline_module.inclusion_chain(blob.data, group, artifact)
+    except timeline_module.TimelineError as exc:
+        raise CliError(f"chain query rejected: {_clean(exc)}") from exc
+    return _emit(result)
+
+
+
+
+def _read_file(path, what, max_bytes=32 * 1024 * 1024):
+    from mdi.capture import capture_file, CaptureError
+    try:
+        captured = capture_file(path, max_bytes)
+    except CaptureError as exc:
+        raise CliError(f"cannot read {what}: {_clean(exc)}") from exc
+    if not captured.complete:
+        raise CliError(f"{what} was not read completely: {captured.reason or 'incomplete'}")
+    return captured.data
+
+
+def _split_gav(query):
+    """groupId:artifactId[:version] -> (group, artifact, version or None)."""
+    parts = query.split(":")
+    if len(parts) == 3:
+        return (parts[0] or None, parts[1] or None, parts[2] or None)
+    if len(parts) == 2:
+        return (parts[0] or None, parts[1] or None, None)
+    return (None, query or None, None)
+
+
+def _cmd_security(args):
+    from mdi import queries as queries_module
+    group, artifact, version = _split_gav(args.query)
+    if not artifact or not version:
+        raise CliError("--query must carry groupId:artifactId:version for security")
+    try:
+        result = queries_module.security(group, artifact, version)
+    except Exception as exc:
+        raise CliError(f"security query failed: {_clean(exc)}") from exc
+    return _emit(result)
+
+
+def _cmd_conflicts(args):
+    from mdi import queries as queries_module
+    data = _read_file(args.tree, "tree JSON")
+    try:
+        result = queries_module.conflicts(data)
+    except queries_module.TimelineError as exc:
+        raise CliError(f"conflicts query rejected: {_clean(exc)}") from exc
+    return _emit(result)
+
+
+def _cmd_versions(args):
+    from mdi import queries as queries_module
+    group = artifact = None
+    if args.query:
+        group, artifact, _ = _split_gav(args.query)
+    try:
+        result = queries_module.versions(args.repo, group_id=group, artifact_id=artifact)
+    except queries_module.TimelineError as exc:
+        raise CliError(f"versions query rejected: {_clean(exc)}") from exc
+    return _emit(result)
+
+
+def _cmd_diff(args):
+    from mdi import queries as queries_module
+    data_a = _read_file(args.tree_a, "tree A")
+    data_b = _read_file(args.tree_b, "tree B")
+    try:
+        result = queries_module.diff_trees(data_a, data_b,
+                                           label_a=args.label_a, label_b=args.label_b)
+    except queries_module.TimelineError as exc:
+        raise CliError(f"diff query rejected: {_clean(exc)}") from exc
+    return _emit(result)
+
+
+def _cmd_usage(args):
+    from mdi import queries as queries_module
+    try:
+        result = queries_module.usage(args.jar, args.classes, scope=args.scope)
+    except queries_module.TimelineError as exc:
+        raise CliError(f"usage query rejected: {_clean(exc)}") from exc
+    return _emit(result)
+
+
+def _cmd_orphans(args):
+    from mdi import queries as queries_module
+    kwargs = {}
+    if args.maven_repo:
+        kwargs["maven_repo"] = args.maven_repo
+    try:
+        result = queries_module.orphans(args.repo, args.classes, **kwargs)
+    except queries_module.TimelineError as exc:
+        raise CliError(f"orphans query rejected: {_clean(exc)}") from exc
+    return _emit(result)
+
 def _cmd_execute(args):
     if (args.capture_operation is None) != (args.capture_approval_file is None):
         raise CliError("--capture-operation and --capture-approval-file must be supplied together")
@@ -2266,8 +2556,27 @@ def _cmd_execute(args):
     kind = record["scope"].get("kind")
     if kind == "raw-capture":
         raise CliError("raw-capture cannot execute directly; execute its source with "
-                       "--capture-operation and --capture-approval-file alongside source approval")
-    approval = _load_approval(args.approval_file)
+                       "--capture-operation and --capture-approval-file; the capture "
+                       "approval is always a real host approval")
+    if args.approval_file is not None:
+        approval = _load_approval(args.approval_file)
+    elif kind in ("maven", "advisory"):
+        # Maintainer standing policy (2026-10-25): diagnostic operations never
+        # pause for approval. The synthesized record is labeled as policy, is
+        # never presented as a host approval, and the full operation audit
+        # still records intent, argv or destination, and outcome.
+        approval = {
+            "run_id": store.run_id,
+            "operation_id": args.operation,
+            "scope": copy.deepcopy(record["scope"]),
+            "approved": True,
+            "approved_by": "standing-diagnostic-policy",
+            "reference": "maintainer decision 2026-10-25: diagnostic maven goals "
+                         "and advisory lookups are pre-approved",
+        }
+    else:
+        raise CliError(f"operation {args.operation!r} carries unsupported kind "
+                       f"{kind!r}; no executor was invoked")
     capture_args = {}
     if args.capture_operation is not None:
         capture_args = {"capture_operation_id": args.capture_operation,
@@ -2314,11 +2623,20 @@ def _cmd_execute(args):
         document["import"] = ("not performed: process success is not a parsed report; "
                               "run 'import' with an explicit --report file and "
                               "--provenance to make the captured output evidence")
+        snapshot = _auto_import_tree_snapshot(
+            store, current, record, result, document)
+        if snapshot is not None:
+            document["snapshot"] = snapshot
+            if snapshot.get("recorded"):
+                document["revision"] = snapshot["revision"]
+                document["import"] = ("tree snapshot recorded automatically from the "
+                                      "pinned tree goal; an explicit 'import' remains "
+                                      "available for reports from other tools")
     else:
         document["advisory_result"] = result["result"]
         document["next_page_token"] = result["next_page_token"]
         document["next_page"] = ("a continuation page requires a new proposal with "
-                                 "--page-token and fresh host approval")
+                                 "--page-token; it then runs under the standing policy")
     return _emit(document)
 
 
@@ -2340,6 +2658,24 @@ def _run(argv):
         return _cmd_report(args)
     if args.command == "propose":
         return _cmd_propose(args)
+    if args.command == "timeline":
+        return _cmd_timeline(args)
+    if args.command == "releases":
+        return _cmd_releases(args)
+    if args.command == "chain":
+        return _cmd_chain(args)
+    if args.command == "security":
+        return _cmd_security(args)
+    if args.command == "conflicts":
+        return _cmd_conflicts(args)
+    if args.command == "versions":
+        return _cmd_versions(args)
+    if args.command == "diff":
+        return _cmd_diff(args)
+    if args.command == "usage":
+        return _cmd_usage(args)
+    if args.command == "orphans":
+        return _cmd_orphans(args)
     return _cmd_execute(args)
 
 

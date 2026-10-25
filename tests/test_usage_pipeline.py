@@ -146,7 +146,10 @@ class PipelineTestCase(unittest.TestCase):
         shutil.copy(classes / "com/example/mr/V.class", v17 / "V.class")
         mr_manifest = fix / "mr.mf"
         mr_manifest.write_text("Multi-Release: true\n")
-        jar_of("mr.jar", "com/example/mr/Base.class", mr_manifest)
+        proc = _run(["jar", "--create", "--file", fix / "mr.jar",
+                     "--manifest", mr_manifest, "-C", mr_stage, "."])
+        if proc.returncode != 0:
+            raise AssertionError(f"BLOCKER: fixture jar mr.jar failed:\n{proc.stderr}")
 
     def setUp(self):
         checkout = tempfile.TemporaryDirectory(prefix="mdi-pipeline-checkout-")
@@ -314,24 +317,24 @@ class PipelineTestCase(unittest.TestCase):
 
     # -- partial outcomes ---------------------------------------------------
 
-    def test_mr_dependency_partial_with_surfaced_helper_issue(self):
+    def test_mr_dependency_analyzed_complete_with_version_info(self):
         result = self.inspect(deps=("app/dep-b.jar", "app/mr.jar"))
-        self.assertEqual(result["status"], "partial")
-        # The raw runner result stays complete-but-flagged; the helper issue
-        # is surfaced at pipeline level with the ORIGINAL source attached.
-        self.assertEqual(result["runner"]["status"], "complete")
+        self.assertEqual(result["status"], "complete", msg=str(result["issues"]))
         codes = {issue["code"] for issue in result["issues"]}
-        self.assertIn("unsupported-multi-release-jar", codes)
-        self.assertIn("inputs-not-analyzed", codes)
-        surfaced = next(issue for issue in result["issues"]
-                        if issue["code"] == "unsupported-multi-release-jar")
-        self.assertEqual(surfaced["input_source"], str(self.checkout / "app/mr.jar"))
+        self.assertNotIn("unsupported-multi-release-jar", codes)
+        self.assertNotIn("inputs-not-analyzed", codes)
+        # The versioned info survives the pipeline mapping with real names.
         mr_entry = next(entry for entry in result["runner"]["report"]["inputs"]
-                        if entry["path"] == surfaced["input"])
-        self.assertFalse(mr_entry["analyzed"])
-        self.assertTrue(any("app/mr.jar" in issue["message"]
-                            for issue in result["issues"]
-                            if issue["code"] == "inputs-not-analyzed"))
+                        if entry.get("multi_release"))
+        self.assertTrue(mr_entry["analyzed"])
+        self.assertEqual(mr_entry["multi_release_versions"], [17])
+        self.assertIn("17", mr_entry["versioned_classes"])
+        versioned = mr_entry["versioned_classes"]["17"]
+        self.assertTrue(any(c.endswith(".V") for c in versioned))
+        self.assertFalse([c for c in versioned if "META-INF" in c])
+        self.assertEqual(len(result["source_refs"]), len(result["runner"]["refs"]))
+        self.assertNotIn("unmapped-staged-path",
+                         {issue["code"] for issue in result["issues"]})
 
     # -- staging refusals ---------------------------------------------------
 
@@ -567,35 +570,24 @@ class PipelineTestCase(unittest.TestCase):
         self.assertEqual(ab["origin"]["source"], str(self.checkout / "app/root.jar"))
         self.assertFalse(Path(result["staging"]["stage_dir"]).exists())
 
-    def test_double_slash_base_mr_issue_keeps_original_sources(self):
-        # Same noncanonical spelling, but through every original-coordinate
-        # surface: the surfaced helper issue must carry input_source, the
-        # inputs-not-analyzed message must name the ORIGINAL source, and no
-        # deleted-stage path may be labeled as an original source. The raw
-        # runner result keeps its staged spellings unchanged.
+    def test_double_slash_base_mr_analyzed_keeps_original_sources(self):
+        # Same noncanonical spelling, through every original-coordinate
+        # surface: the MR dependency is analyzed (no issues), refs map back to
+        # the ORIGINAL sources, and no deleted-stage path is labeled as an
+        # original source.
         doubled = "//" + str(self.base)[1:]
         result = self.inspect(deps=("app/dep-b.jar", "app/mr.jar"),
                               staging_base=doubled)
-        self.assertEqual(result["status"], "partial")
-        mr_original = str(self.checkout / "app/mr.jar")
-        surfaced = next(issue for issue in result["issues"]
-                        if issue["code"] == "unsupported-multi-release-jar")
-        self.assertEqual(surfaced["input_source"], mr_original)
-        self.assertTrue(surfaced["input"].startswith(str(self.base) + os.sep))
-        skipped = next(issue for issue in result["issues"]
-                       if issue["code"] == "inputs-not-analyzed")
-        self.assertIn(mr_original, skipped["message"])
-        self.assertNotIn("input-", skipped["message"])
-        self.assertNotIn(str(self.base), skipped["message"])
-        # Every ref still maps; nothing was dropped as unmapped.
+        self.assertEqual(result["status"], "complete", msg=str(result["issues"]))
+        self.assertEqual(result["issues"], [])
         self.assertEqual(len(result["source_refs"]), len(result["runner"]["refs"]))
-        self.assertNotIn("unmapped-staged-path",
-                         {issue["code"] for issue in result["issues"]})
-        # The raw runner result is untouched: staged spellings, no input_source.
-        raw_mr_issue = next(issue for issue in result["runner"]["issues"]
-                            if issue["code"] == "unsupported-multi-release-jar")
-        self.assertNotIn("input_source", raw_mr_issue)
-        self.assertTrue(raw_mr_issue["input"].startswith(str(self.base) + os.sep))
+        ab = self.ref(result, ("com.example.A", "com.example.B"))
+        self.assertEqual(ab["origin"]["source"], str(self.checkout / "app/root.jar"))
+        mr_entry = next(entry for entry in result["runner"]["report"]["inputs"]
+                        if entry.get("multi_release"))
+        self.assertEqual(mr_entry["multi_release_versions"], [17])
+        self.assertFalse([c for names in mr_entry["versioned_classes"].values()
+                          for c in names if "META-INF" in c])
 
     def test_unmapped_report_path_downgrades_to_partial(self):
         # If a report path cannot be matched to a staged input, the dropped

@@ -77,7 +77,7 @@ Bounds on claims:
 
 - Query exactly identified versions as exact. Unknown or conflicting component identity produces an unresolved-security assessment, or clearly separated candidate results; never a clean result. Unresolved version placeholders are never sent as exact queries.
 - Applicability is provider-reported. OSV fuzzy-matches the queried version against upstream versions and this collector does not independently evaluate ranges. Preserve every affected interval, branch-specific fix, and alias; never flatten multiple ranges into a single fixed version.
-- Results are page-local. A `next_page_token` in a response means more pages exist and were not fetched; that is an explicit unknown in the answer. A follow-up page requires a new proposal and fresh host approval; continuation is never automatic.
+- Results are page-local. A `next_page_token` in a response means more pages exist and were not fetched; that is an explicit unknown in the answer. A follow-up page requires a new proposal carrying `--page-token` and then runs under the standing policy; continuation is never automatic.
 - Empty means no known matches from that source at that time. It never means safe. Failed, denied, and unsupported-identity lookups are distinct statuses, never reported as empty or clean.
 
 ## 7. Missing states and qualifications

@@ -124,6 +124,9 @@ _REPORT_KEYS = {"schema", "scope", "root", "inputs", "refs",
                 "target_owner_candidates", "issues"}
 _INPUT_KEYS = {"path", "role", "kind", "size_bytes", "class_count",
                "classes", "analyzed"}
+# Optional, present only for multi-release inputs analyzed through derived
+# baseline/version views by the helper.
+_MR_INPUT_KEYS = {"multi_release", "multi_release_versions", "versioned_classes"}
 _REF_KEYS = {"from_class", "to_class", "origin_input"}
 _CANDIDATE_KEYS = {"to_class", "owner_candidates"}
 _ISSUE_KEYS = {"code", "message", "input"}
@@ -799,9 +802,44 @@ def _validate_report(report, scope, root, input_paths, deadline):
             if not isinstance(entry, dict):
                 note(f"input {i} is {type(entry).__name__}, not an object")
                 continue
-            if set(entry) != _INPUT_KEYS:
+            extra = set(entry) - _INPUT_KEYS
+            missing = _INPUT_KEYS - set(entry)
+            if missing or (extra - _MR_INPUT_KEYS):
                 note(f"input {i} keys mismatch: {sorted(entry)}")
                 continue
+            if extra and entry.get("multi_release") is not True:
+                note(f"input {i} carries multi-release fields without"
+                     f" multi_release true")
+                continue
+            if "multi_release_versions" in entry:
+                versions = entry["multi_release_versions"]
+                if (not isinstance(versions, list)
+                        or not all(type(v) is int and v >= 6 for v in versions)
+                        or versions != sorted(set(versions))):
+                    note(f"input {i} multi_release_versions is not a sorted"
+                         f" list of distinct version ints >= 6")
+            if "versioned_classes" in entry:
+                versioned = entry["versioned_classes"]
+                versions = entry.get("multi_release_versions")
+                if (not isinstance(versioned, dict)
+                        or sorted(versioned) != sorted(str(v) for v in (versions or []))):
+                    note(f"input {i} versioned_classes keys do not match"
+                         f" multi_release_versions")
+                else:
+                    union = set(entry.get("classes") or [])
+                    for key, names in versioned.items():
+                        if (not isinstance(names, list)
+                                or not all(isinstance(n, str)
+                                           and _CLASS_NAME.fullmatch(n)
+                                           for n in names)
+                                or names != sorted(set(names))):
+                            note(f"input {i} versioned_classes[{key!r}] is"
+                                 f" not a sorted-unique list of class names")
+                            break
+                        if not set(names) <= union:
+                            note(f"input {i} versioned_classes[{key!r}] lists"
+                                 f" classes outside the input's class union")
+                            break
             expected_role = scope if i == 0 else "upstream"
             if entry["role"] != expected_role:
                 note(f"input {i} role is {entry['role']!r},"

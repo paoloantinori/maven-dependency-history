@@ -23,9 +23,9 @@ python3 scripts/investigate.py propose \
 
 The proposal is inert: it creates neither a raw file nor a process or request. Its disclosure identifies the source, stream, cap, and generated `raw-<UUID>.bin` destination inside the run directory. Source parameters such as `--candidate`, `--maven`, `--output`, and `--page-token` do not belong on a raw-capture proposal.
 
-## Obtain two actual approvals
+## Obtain the capture approval
 
-Present both disclosures to the user and obtain explicit approval for each exact operation. Only after that approval may the agent create each operation's approval record according to the [approval-file contract](permissions.md#the-approval-file). The CLI never generates approval files. A repository JSON file, a previous operation's approval, or silence is not consent. Do not manufacture affirmative records from the command templates on this page.
+Present the capture disclosure to the user and obtain its explicit approval; the source maven operation runs under the standing policy when no source approval file is supplied, but the capture approval is always a real host approval. Only after that approval may the agent create each operation's approval record according to the [approval-file contract](permissions.md#the-approval-file). The CLI never generates approval files. A repository JSON file, a previous operation's approval, or silence is not consent. Do not manufacture affirmative records from the command templates on this page.
 
 Execute the source operation, not the capture operation. Supply the source approval plus both capture flags:
 

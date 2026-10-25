@@ -564,11 +564,10 @@ class ExecuteTests(OperationsCliTestCase):
                             "--approval-file", approval)
         doc = self.parse(proc)
         self.assertEqual(doc["outcome"], "succeeded")
-        self.assertEqual(doc["revision"], 6)  # consume, evidence, finalize
         self.assertTrue(doc["output_meta"]["sha256"])
         self.assertFalse(doc["output_meta"]["capped"])
         self.assertEqual(doc["output_report_path"], str(self.output))
-        self.assertIn("not performed", doc["import"])
+        self.assertIn("tree snapshot recorded automatically", doc["import"])
         report = self.parse(self.run_cli("report", "--run-dir", run_dir))
         finished = report["operations"][0]
         self.assertEqual(finished["state"], "finished")
@@ -581,11 +580,73 @@ class ExecuteTests(OperationsCliTestCase):
         self.assertNotIn("SECRET-OUTPUT-MARKER", json.dumps(report))
         # the produced report only becomes parsed evidence through explicit import
         self.parse(self.run_cli("import", "--run-dir", run_dir,
-                                "--expect-revision", "6",
+                                "--expect-revision", str(doc["revision"]),
                                 "--report", self.output, "--kind", "tree-json"))
         report = self.parse(self.run_cli("report", "--run-dir", run_dir))
         self.assertTrue([e for e in report["evidence"]
                          if e["category"] == "imported-tree-json"])
+
+    def test_execute_maven_without_approval_file_runs_under_standing_policy(self):
+        run_dir, operation = self.propose_and_select("tree")
+        proc = self.run_cli("execute", "--run-dir", run_dir,
+                            "--expect-revision", "3",
+                            "--operation", operation["id"])
+        doc = self.parse(proc)
+        self.assertEqual(doc["outcome"], "succeeded")
+        report = self.parse(self.run_cli("report", "--run-dir", run_dir))
+        finished = report["operations"][0]
+        self.assertEqual(finished["state"], "finished")
+        started = finished["audit"]["started"]
+        self.assertEqual(started["approved_by"], "standing-diagnostic-policy")
+        self.assertIn("maintainer decision", started["reference"])
+        self.assertTrue(self.log.exists())
+
+    def test_explicit_denial_file_still_refuses_under_standing_policy(self):
+        run_dir, operation = self.propose_and_select("tree")
+        approval = self.write_approval(run_dir, operation, approved=False)
+        proc = self.run_cli("execute", "--run-dir", run_dir,
+                            "--expect-revision", "3",
+                            "--operation", operation["id"],
+                            "--approval-file", approval)
+        message = self.error(proc)
+        self.assertIn("approved", message)
+        self.assertEqual(self.read_operation(run_dir)["state"], "proposed")
+        self.assertFalse(self.log.exists())
+
+    def test_tree_execution_records_snapshot_automatically(self):
+        run_dir, operation = self.propose_and_select("tree")
+        proc = self.run_cli("execute", "--run-dir", run_dir,
+                            "--expect-revision", "3",
+                            "--operation", operation["id"])
+        doc = self.parse(proc)
+        self.assertEqual(doc["outcome"], "succeeded")
+        # With diagnostics auto-approved, the tree output is recorded as a
+        # same-run imported-tree snapshot with executor provenance.
+        self.assertTrue(doc["snapshot"]["recorded"], doc["snapshot"])
+        self.assertEqual(doc["snapshot"]["tree_mode"], "nonverbose")
+        self.assertEqual(doc["snapshot"]["provenance_attestation"], "executor-recorded")
+        report = self.parse(self.run_cli("report", "--run-dir", run_dir))
+        snapshot_ev = [e for e in report["evidence"]
+                       if e["category"] == "imported-tree-json"]
+        self.assertTrue(snapshot_ev)
+        self.assertEqual(snapshot_ev[0]["payload"]["provenance_attestation"],
+                         "executor-recorded")
+        stage = next(s for s in report["stages"] if s["name"] == "import-tree-json")
+        self.assertEqual(stage["outcome"], "complete")
+        self.assertFalse(any(q["kind"] == "assumed-producer-grammar"
+                             and q["affected_evidence_ids"] == [snapshot_ev[0]["id"]]
+                             for q in report["qualifications"]))
+
+    def test_classpath_execution_reports_no_snapshot_message(self):
+        run_dir, operation = self.propose_and_select("classpath")
+        proc = self.run_cli("execute", "--run-dir", run_dir,
+                            "--expect-revision", "3",
+                            "--operation", operation["id"])
+        doc = self.parse(proc)
+        self.assertEqual(doc["outcome"], "succeeded")
+        self.assertFalse(doc["snapshot"]["recorded"])
+        self.assertIn("not the dependency tree plugin", doc["snapshot"]["reason"])
+        self.assertIn("not performed", doc["import"])
 
     def test_execute_denial_keeps_operation_proposed(self):
         run_dir, operation = self.propose_and_select("tree")
@@ -607,7 +668,7 @@ class ExecuteTests(OperationsCliTestCase):
                                 "--operation", operation["id"],
                                 "--approval-file", approval))
         replay = self.run_cli("execute", "--run-dir", run_dir,
-                              "--expect-revision", "6",
+                              "--expect-revision", "7",
                               "--operation", operation["id"],
                               "--approval-file", approval)
         self.assertEqual(replay.returncode, 2)
@@ -637,12 +698,15 @@ class ExecuteTests(OperationsCliTestCase):
                                       "--operation", operation["id"],
                                       "--approval-file", approval))
         self.assertEqual(doc["outcome"], "succeeded")
-        self.assertIn("not performed", doc["import"])
+        # the output file was never written, so no snapshot was recorded and
+        # the run honestly claims no parsed tree
+        self.assertFalse(doc["snapshot"]["recorded"], doc["snapshot"])
+        self.assertIn("cannot capture output report", doc["snapshot"]["reason"])
         report = self.parse(self.run_cli("report", "--run-dir", run_dir))
         self.assertFalse([e for e in report["evidence"]
                           if e["category"].startswith("imported")])
         missing = self.run_cli("import", "--run-dir", run_dir,
-                               "--expect-revision", "6",
+                               "--expect-revision", str(doc["revision"]),
                                "--report", self.output, "--kind", "tree-json")
         self.assertEqual(missing.returncode, 2)
 
@@ -709,12 +773,10 @@ class ExecuteTests(OperationsCliTestCase):
 
     def test_execute_missing_required_flags_is_invalid(self):
         run_dir, operation = self.propose_and_select("tree")
-        approval = self.write_approval(run_dir, operation)
-        proc = self.run_cli("execute", "--run-dir", run_dir,
-                            "--expect-revision", "3",
-                            "--operation", operation["id"])
-        self.assertIn("--approval-file", self.error(proc))
         proc = self.run_cli("execute", "--run-dir", run_dir)
+        self.assertIn("--operation", self.error(proc))
+        proc = self.run_cli("execute", "--run-dir", run_dir,
+                            "--expect-revision", "3")
         self.assertIn("--operation", self.error(proc))
 
 

@@ -350,6 +350,49 @@ class RawCaptureCliTests(OperationsCliTestCase):
                                  ['consumed' if failing_revision == 6 else 'finished', 'consumed'])
                 self.assertTrue(any(e['category'] == 'raw-capture' for e in report['evidence']))
 
+    def test_capture_with_policy_source_and_real_capture_approval(self):
+        run_dir, source = self.propose_and_select()
+        capture = self.register(run_dir, source, cap=4096)
+        capture_file = self.write_approval(run_dir, capture)
+        proc = self.run_cli(
+            'execute', '--run-dir', run_dir, '--expect-revision', '4',
+            '--operation', source['id'],
+            '--capture-operation', capture['id'], '--capture-approval-file', capture_file)
+        doc = self.parse(proc)
+        self.assertEqual(doc['outcome'], 'succeeded')
+        self.assertEqual(doc['capture_outcome'], 'succeeded')
+        report = self.report(run_dir)
+        states = {op['id']: op for op in report['operations']}
+        self.assertEqual(states[source['id']]['audit']['started']['approved_by'],
+                         'standing-diagnostic-policy')
+        self.assertNotEqual(states[capture['id']]['audit']['started']['approved_by'],
+                            'standing-diagnostic-policy')
+        self.assertEqual(states[capture['id']]['audit']['started']['approved_by'],
+                         'the host user')
+
+    def test_advisory_without_approval_file_runs_under_standing_policy(self):
+        run_dir, source = self.propose_and_select('advisory')
+        body = b'{"vulns": []}'
+        case = self
+        with self.copied_modules() as cli:
+            executor = importlib.import_module('mdi.advisory_executor')
+            class Transport:
+                def post(self, *args):
+                    return body
+            output = io.StringIO()
+            with mock.patch.object(executor, 'DeadlineTransport', return_value=Transport()), \
+                    contextlib.redirect_stdout(output):
+                code = cli.main(['execute', '--run-dir', run_dir, '--expect-revision', '3',
+                                 '--operation', source['id']])
+            case.assertEqual(code, 0, output.getvalue())
+        result = json.loads(output.getvalue())
+        self.assertEqual(result['outcome'], 'succeeded')
+        report = self.report(run_dir)
+        finished = {op['id']: op for op in report['operations']}[source['id']]
+        self.assertEqual(finished['audit']['started']['approved_by'],
+                         'standing-diagnostic-policy')
+        self.assertNotIn('SECRET-RESPONSE', output.getvalue())
+
     def test_advisory_pair_consumed_before_mock_transport_and_no_raw_in_json(self):
         run_dir, source = self.propose_and_select('advisory')
         capture = self.register(run_dir, source, cap=1024)

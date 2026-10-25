@@ -28,7 +28,7 @@ Dependency trees import conservatively as diagnostic evidence unless their nonve
 
 Local inspection never invokes Maven or a project wrapper. Archive discovery runs a trusted Python worker against private captured files outside the checkout; optional usage analysis runs only the verified bundled Java helper against staged copies, not application classes. Parent-side capture and filesystem IO remain cooperatively bounded; the archive worker's deadline interrupts child decompression, not every operation in the investigation.
 
-Every Maven invocation and advisory request requires a disclosed, single-use approval. The CLI never invents approval records. Maven execution is not sandboxed; project code and configuration may override defaults and cause side effects. Existing output files are refused by default. Read the [permission contract](skills/maven-dependency-investigator/references/permissions.md) before proposing execution.
+Diagnostic Maven goals and advisory lookups run automatically under the maintainer's standing policy, with every run audited (exact command or destination, outcome); a supplied denial file still refuses. Explicit host approval is required only for raw diagnostic retention and for replacing an existing output file. The CLI never invents a host approval. Maven execution is not sandboxed; project code and configuration may override defaults and cause side effects. Read the [permission contract](skills/maven-dependency-investigator/references/permissions.md) before proposing execution.
 
 The collector does not remove dependencies, edit project POMs, apply upgrades, commit changes, or publish results.
 
