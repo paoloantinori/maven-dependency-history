@@ -6,7 +6,7 @@ It collects inspectable evidence for dependency declarations and inclusion paths
 
 ## Status
 
-The initial collector and CLI passed their recorded reviews and configured integration tests. The current CLI now uses file-backed, isolated archive inspection with ZIP64 support; TASK-25 records its completed archive-extension reviews and verification. Read the [archive limits and compatibility modes](skills/maven-dependency-investigator/references/cli.md#archive-coverage-and-limits) before use. Further evidence extensions remain separately tracked.
+The initial collector and CLI passed their recorded reviews and configured integration tests. The current CLI now uses file-backed, isolated archive inspection with ZIP64 support. Read the [archive limits and compatibility modes](skills/maven-dependency-investigator/references/cli.md#archive-coverage-and-limits) before use. All extension tasks (archive hardening, multi-release jar support, standing-policy diagnostics, timeline and release queries) are complete.
 
 ## Use the bundled skill
 
@@ -20,9 +20,42 @@ python3 /path/to/maven-dependency-history/skills/maven-dependency-investigator/s
   --state-dir /path/outside/project/investigator-state
 ```
 
-Use the returned run directory, revision and candidate identifiers for subsequent commands. Do not copy identifiers from another investigation. The available commands are `discover`, `select`, `collect`, `import`, `report`, `propose`, and `execute`; use their `--help` output for flags.
+Use the returned run directory, revision and candidate identifiers for subsequent commands. Do not copy identifiers from another investigation.
 
-Dependency trees import conservatively as diagnostic evidence unless their nonverbose mode is explicitly attested. Historical producer context is distinct from the current checkout. See the [interpretation guide](skills/maven-dependency-investigator/references/interpretation.md).
+### Standalone query commands
+
+Nine commands answer discrete questions without a run-dir, no Maven, no network:
+
+```sh
+python3 $INV timeline --repo /path/to/project --query groupId:artifactId
+# When was it added? Who added it? What versions over time?
+
+python3 $INV releases --repo /path/to/project --query groupId:artifactId
+# Which tagged releases carry it?
+
+python3 $INV chain --tree /path/to/tree.json --query groupId:artifactId
+# What is the inclusion path from root to this dependency?
+
+python3 $INV security --query groupId:artifactId:version
+# Known OSV vulnerabilities for this exact coordinate?
+
+python3 $INV conflicts --tree /path/to/tree.json
+# Version mediations in the resolved tree?
+
+python3 $INV versions --repo /path/to/project
+# Per-GA version landscape across all module POMs?
+
+python3 $INV diff --tree-a a.json --tree-b b.json
+# What changed in the dependency graph between two trees?
+
+python3 $INV usage --jar /path/to/lib.jar --classes /path/to/target/classes
+# Which project classes reference this library?
+
+python3 $INV orphans --repo /path/to/project --classes /path/to/target/classes
+# Declared dependencies with zero static references?
+```
+
+The other commands (`discover`, `select`, `collect`, `import`, `report`, `propose`, `execute`) form the investigation workflow using a run-dir and `--expect-revision` for continuity. Dependency trees import conservatively as diagnostic evidence unless their nonverbose mode is explicitly attested. Historical producer context is distinct from the current checkout. See the [interpretation guide](skills/maven-dependency-investigator/references/interpretation.md).
 
 ## Permission boundaries
 
