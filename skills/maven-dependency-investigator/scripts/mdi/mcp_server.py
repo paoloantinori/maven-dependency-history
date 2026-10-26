@@ -186,5 +186,104 @@ def _parse_gav(query):
         f"security requires groupId:artifactId:version, got {query!r}")
 
 
+# -- MCP Resources: inline guides for agents discovering this server --------
+
+
+GUIDE_TEXT = """\
+# Maven Dependency Investigator
+
+Answers "why is this Maven dependency in my project?" from a local checkout
+with cited evidence. Every claim cites its source; missing evidence stays
+explicit.
+
+## Quick queries (pick one, no setup needed)
+
+| Tool | Ask it | Input |
+|------|--------|-------|
+| `timeline` | When was it added? Who? What versions? | repo + g:a |
+| `releases` | Which tagged releases carry it? | repo + g:a |
+| `chain` | What is the inclusion path from root? | tree.json + g:a |
+| `security` | Known vulnerabilities for this version? | g:a:version |
+| `conflicts` | Version conflicts Maven mediated? | tree.json |
+| `versions` | Version landscape across all modules? | repo (+ optional g:a) |
+| `diff` | What changed between two trees? | tree_a + tree_b |
+| `usage` | Which project classes use this library? | jar + classes dir |
+| `orphans` | Declared but never referenced? | repo + classes dir |
+
+## How to get a tree.json
+
+Run the CLI on the project (one command, no approval needed):
+
+    python3 <skill>/scripts/investigate.py \\
+      discover --repo /path/to/project --query g:a \\
+      --state-dir /var/tmp/mdi-state
+
+Then use the returned run_dir:
+
+    python3 <skill>/scripts/investigate.py \\
+      propose --run-dir <run> --expect-revision 2 --kind tree \\
+      --candidate <id> --maven $(which mvn) \\
+      --output /var/tmp/tree.json --input <module>/pom.xml \\
+      --destinations-unknown
+
+    python3 <skill>/scripts/investigate.py \\
+      execute --run-dir <run> --expect-revision 3 --operation <op_id>
+
+The tree is saved at /var/tmp/tree.json and the auto-snapshot records it
+in the run.
+
+## Query format
+
+- `g:a` means groupId:artifactId (e.g., `com.fasterxml.jackson.core:jackson-databind`)
+- `g:a:v` adds the version (required for `security`)
+- Partial matches work: query `kiota` finds all kiota-related artifacts
+
+## Honest limitations
+
+- A declaration is not a resolved dependency
+- A class reference is not observed execution
+- Zero vulnerabilities means no known matches from OSV, never "safe"
+- Version placeholders are resolved from POM properties when possible
+- The tree is a snapshot of one resolution at one point in time
+
+## Full investigation workflow
+
+For the complete picture with evidence IDs and a cited report:
+
+1. `discover --repo <path> --query <name>` to find candidates
+2. `select` one candidate
+3. `collect` evidence (Maven tree, class usage, Git history)
+4. `report` to assemble the answer
+
+See the CLI reference at `<skill>/references/cli.md` for details.
+"""
+
+
+@mcp.resource("mdi://guide")
+def guide() -> str:
+    """Complete guide: what each tool answers, how to prepare inputs,
+    query format, honest limitations, and the full workflow."""
+    return GUIDE_TEXT
+
+
+@mcp.resource("mdi://tools/{name}")
+def tool_doc(name: str) -> str:
+    """Per-tool documentation with parameters and examples."""
+    docs = {
+        "timeline": "Params: repo (path), query (g:a or bare name). Returns events list with commit metadata. Offline.",
+        "releases": "Params: repo (path), query (g:a). Returns per-tag declaration status. Offline.",
+        "chain": "Params: tree (path to tree JSON), query (g:a). Returns inclusion paths. Offline; needs a tree JSON from dependency:tree.",
+        "security": "Params: query (g:a:v, version required). Returns OSV vulnerabilities. Queries api.osv.dev.",
+        "conflicts": "Params: tree (path to tree JSON). Returns version mediations. Offline; needs verbose tree output.",
+        "versions": "Params: repo (path), query (optional g:a filter). Returns GA-to-module version map. Offline.",
+        "diff": "Params: tree_a, tree_b (paths to tree JSONs), label_a/label_b. Returns added/removed/changed. Offline.",
+        "usage": "Params: jar (path), classes (path to target/classes), scope (production|test). Returns class references. Offline; runs Java helper.",
+        "orphans": "Params: repo (path), classes (path to target/classes), maven_repo (optional). Returns unused declarations. Offline; runs Java helper.",
+    }
+    if name not in docs:
+        raise ValueError(f"unknown tool {name!r}; available: {sorted(docs)}")
+    return f"# {name}\n\n{docs[name]}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
