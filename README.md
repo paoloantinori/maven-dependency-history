@@ -45,6 +45,28 @@ $ python3 maven-dependency-investigator/scripts/investigate.py timeline \
  ], "truncated": false, ...}
 ```
 
+Here is the same question asked to a coding agent with the MCP server registered, showing the synthesized answer the agent produces by calling the tools:
+
+> **You**: why do we have jackson-databind in apicurio-registry?
+>
+> **Agent**: jackson-databind appears in apicurio-registry for two distinct reasons.
+>
+> **Inclusion paths** (from the resolved tree):
+> - `apicurio-registry-app` depends on `quarkus-jackson:3.33.3.1` which brings in `jackson-databind:2.21.5` for JSON serialization of the REST API.
+> - `apicurio-registry-app` also depends on `quarkus-elasticsearch-java-client:3.33.3.1` which brings in `tools.jackson.core:jackson-databind:3.0.0` (the Jackson 3 fork) via `elasticsearch-java:9.2.3`.
+>
+> So there are actually two different jackson-databind artifacts in the same application, serving different purposes: one for the Quarkus REST stack, one for the Elasticsearch client.
+>
+> **Usage**: your code in `common/target/classes` does not call jackson-databind classes directly. All 869 references from apicurio classes go to `com.fasterxml.jackson.annotation` (the `@JsonProperty` and `@JsonInclude` annotations on your REST beans). The serialization itself is done by Quarkus under the hood.
+>
+> **History**: it first appeared on 2022-05-27 in `system-tests/pom.xml` (rkubis, PR #2464 "Resource and operator managers"). Seven modules now declare it directly (`cli`, `schema-util/avro`, `utils/importexport`, `utils/flink`, `utils/maven-plugin`, `utils/raml-test-micro-service`, `examples/tools/kafkasql-topic-import`).
+>
+> **Security**: jackson-databind 2.21.5 has zero known vulnerabilities in OSV as of today. Note this means "no known matches from that source", not "safe".
+>
+> **Releases**: it is declared in 162 of 183 tagged releases, starting from `2.1.1.Final`.
+
+The agent reaches this answer by calling `chain`, `usage`, `timeline`, `security` and `releases` in sequence, then synthesizing the evidence into a single narrative with each claim traceable to a tool result.
+
 If you want to use it as an MCP server from Claude Code or another agent, install [uv](https://docs.astral.sh/uv/) and see the MCP section below.
 
 ## Three ways to use it
