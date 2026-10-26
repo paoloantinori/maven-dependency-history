@@ -6,25 +6,37 @@ It collects inspectable evidence for dependency declarations and inclusion paths
 
 ## Status
 
-The initial collector and CLI passed their recorded reviews and configured integration tests. The current CLI now uses file-backed, isolated archive inspection with ZIP64 support. Read the [archive limits and compatibility modes](skills/maven-dependency-investigator/references/cli.md#archive-coverage-and-limits) before use. All extension tasks (archive hardening, multi-release jar support, standing-policy diagnostics, timeline and release queries) are complete.
+The collector, CLI and MCP server passed their recorded reviews and integration tests. The CLI uses file-backed archive inspection with ZIP64 and multi-release jar support. Diagnostic Maven goals run under a standing policy without per-operation approval. All extension tasks are complete.
 
-## Use the bundled skill
+## Three ways to use it
 
-Read [SKILL.md](skills/maven-dependency-investigator/SKILL.md) and the [CLI reference](skills/maven-dependency-investigator/references/cli.md). The skill includes its collector scripts and a packaged Java helper; no separate global CLI installation is required.
+### 1. As an MCP server (preferred for agents)
 
-Start with local discovery. Choose a state directory outside the inspected checkout:
+Add to a project's `.mcp.json`:
 
-```sh
-python3 /path/to/maven-dependency-history/skills/maven-dependency-investigator/scripts/investigate.py \
-  discover --repo /path/to/project --query groupId:artifactId \
-  --state-dir /path/outside/project/investigator-state
+```json
+{
+  "mcpServers": {
+    "maven-dependency-investigator": {
+      "command": "uv",
+      "args": ["run", "--with", "mcp", "python",
+               "/path/to/maven-dependency-history/skills/maven-dependency-investigator/scripts/mdi/mcp_server.py"]
+    }
+  }
+}
 ```
 
-Use the returned run directory, revision and candidate identifiers for subsequent commands. Do not copy identifiers from another investigation.
+The agent discovers nine tools (timeline, releases, chain, security, conflicts, versions, diff, usage, orphans) plus two resources: `mdi://guide` (complete how-to) and `mdi://tools/{name}` (per-tool docs).
 
-### Standalone query commands
+### 2. As a CLI with standalone queries
 
-Nine commands answer discrete questions without a run-dir, no Maven, no network:
+Run the entry point with no arguments for a welcome overview:
+
+```sh
+python3 skills/maven-dependency-investigator/scripts/investigate.py
+```
+
+Nine commands answer discrete questions without a run-dir:
 
 ```sh
 python3 $INV timeline --repo /path/to/project --query groupId:artifactId
@@ -42,8 +54,8 @@ python3 $INV security --query groupId:artifactId:version
 python3 $INV conflicts --tree /path/to/tree.json
 # Version mediations in the resolved tree?
 
-python3 $INV versions --repo /path/to/project
-# Per-GA version landscape across all module POMs?
+python3 $INV versions --repo /path/to/project [--tree tree.json]
+# Per-GA version landscape; with --tree, transitives are labeled too
 
 python3 $INV diff --tree-a a.json --tree-b b.json
 # What changed in the dependency graph between two trees?
@@ -55,11 +67,25 @@ python3 $INV orphans --repo /path/to/project --classes /path/to/target/classes
 # Declared dependencies with zero static references?
 ```
 
-The other commands (`discover`, `select`, `collect`, `import`, `report`, `propose`, `execute`) form the investigation workflow using a run-dir and `--expect-revision` for continuity. Dependency trees import conservatively as diagnostic evidence unless their nonverbose mode is explicitly attested. Historical producer context is distinct from the current checkout. See the [interpretation guide](skills/maven-dependency-investigator/references/interpretation.md).
+Queries accept partial names: `--query kiota` finds all kiota-related artifacts. Version placeholders like `${kiota.libs.version}` are resolved to real version numbers through POM properties.
+
+### 3. As a full investigation workflow
+
+For the complete picture with evidence IDs and a cited report:
+
+```sh
+python3 $INV discover --repo /path/to/project --query groupId:artifactId \
+  --state-dir /path/outside/project/investigator-state
+python3 $INV select --run-dir <run> --expect-revision 1 --candidate <id>
+python3 $INV collect --run-dir <run> --expect-revision 2
+python3 $INV report --run-dir <run>
+```
+
+Use the returned run directory, revision and candidate identifiers for subsequent commands. Do not copy identifiers from another investigation.
 
 ## Permission boundaries
 
-Local inspection never invokes Maven or a project wrapper. Archive discovery runs a trusted Python worker against private captured files outside the checkout; optional usage analysis runs only the verified bundled Java helper against staged copies, not application classes. Parent-side capture and filesystem IO remain cooperatively bounded; the archive worker's deadline interrupts child decompression, not every operation in the investigation.
+Local inspection never invokes Maven or a project wrapper. Archive discovery runs a trusted Python worker against private captured files outside the checkout; optional usage analysis runs only the verified bundled Java helper against staged copies, not application classes.
 
 Diagnostic Maven goals and advisory lookups run automatically under the maintainer's standing policy, with every run audited (exact command or destination, outcome); a supplied denial file still refuses. Explicit host approval is required only for raw diagnostic retention and for replacing an existing output file. The CLI never invents a host approval. Maven execution is not sandboxed; project code and configuration may override defaults and cause side effects. Read the [permission contract](skills/maven-dependency-investigator/references/permissions.md) before proposing execution.
 
@@ -75,6 +101,6 @@ MDI_TEST_DEPENDENCY_DIR="$PWD/skills/maven-dependency-investigator/vendor/lib" \
   python3 -m unittest discover -s tests -t . -q
 ```
 
-The real Java tests require a JDK and fail clearly when prerequisites are missing; they do not download dependencies. The archive fixture intentionally emits a duplicate-ZIP-name warning. When `/tmp` is tmpfs the suite automatically places its temporary trees under `/var/tmp` so spool and scratch fixtures stay on disk; set `MDI_TEST_TMP_BASE` to pin a directory explicitly. See [Java prerequisites](docs/verification/java-test-prerequisites.md) and [helper build instructions](skills/maven-dependency-investigator/helper/build_local.py).
+The real Java tests require a JDK and fail clearly when prerequisites are missing; they do not download dependencies. When `/tmp` is tmpfs the suite automatically places its temporary trees under `/var/tmp`. See [Java prerequisites](docs/verification/java-test-prerequisites.md).
 
-Work is tracked under [backlog/](backlog/). Code completion requires `/simplify`, high-effort code review, and applicable tests with recorded evidence. Nothing is committed or pushed automatically.
+Work is tracked under [backlog/](backlog/). Code completion requires `/simplify`, high-effort code review, and applicable tests with recorded evidence.
