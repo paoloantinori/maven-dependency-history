@@ -134,6 +134,10 @@ def versions(repo, *, group_id=None, artifact_id=None, tree_json=None):
                             root_props[prop.tag.partition("}")[2]] = (prop.text or "").strip()
         except UnsafeXML:
             pass
+    if not head_poms:
+        raise TimelineError(
+            f"no pom.xml files found in {repo!r}; the versions query"
+            " needs a Maven checkout with at least one POM")
     landscape = {}
     for pom in head_poms:
         blob = _pom_at(repo, "HEAD", pom)
@@ -304,6 +308,11 @@ def usage(jar_path, classes_path, *, scope="production", checkout=None):
     # that is not available, each input is staged independently anyway.
     # Use the classes path's parent as the checkout root; the jar outside
     # that tree is staged from its own location by the pipeline.
+    import shutil
+    if shutil.which("java") is None:
+        raise TimelineError(
+            "Java is not available on PATH; the usage tool needs a JDK"
+            " or JRE. Install Java or set PATH to include it.")
     checkout = checkout or os.path.dirname(classes_path)
     jar_dir = os.path.dirname(str(jar_path))
     # find a common ancestor that contains both, or fall back to the deeper one

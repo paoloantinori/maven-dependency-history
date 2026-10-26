@@ -250,6 +250,16 @@ def _classify(before, after):
     return None
 
 
+def _require_git_repo(repo):
+    """Refuse when the path is not inside a git work tree."""
+    from pathlib import Path as _P
+    if not (_P(repo) / ".git").exists():
+        raise TimelineError(
+            f"{repo!r} is not a git repository (no .git found);"
+            " timeline and releases queries need a checkout with git"
+            " history")
+
+
 def dependency_timeline(repo, group_id, artifact_id, *, limits=None):
     """Every declaration event for one coordinate across Git history.
 
@@ -261,6 +271,7 @@ def dependency_timeline(repo, group_id, artifact_id, *, limits=None):
     no event; this is diff-based history, never a claim about resolved
     graphs. The result is ordered oldest-first by commit date.
     """
+    _require_git_repo(repo)
     limits = limits or TimelineLimits()
     commits = _pickaxe_commits(repo, artifact_id)
     if len(commits) > limits.max_commits:
@@ -380,6 +391,7 @@ def release_coverage(repo, group_id, artifact_id, *, limits=None):
     declares a dependency is reported as declaring it, never as resolving or
     shipping it; the resolved tree of a historical release is unknown here.
     """
+    _require_git_repo(repo)
     limits = limits or TimelineLimits()
     raw = _git(repo, "tag", "--list", "--sort=version:refname")
     tags = [t for t in raw.decode("utf-8", errors="surrogateescape").splitlines() if t.strip()]
