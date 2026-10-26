@@ -226,7 +226,8 @@ def _int_arg(text):
 def _build_parser():
     parser = _Parser(prog="investigate.py",
                      description="Offline Maven dependency investigation CLI.")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser("welcome", help="overview of what this tool can do")
 
     discover = sub.add_parser("discover", help="probe a checkout for query-matching candidates")
     discover.add_argument("--repo", required=True)
@@ -2549,6 +2550,52 @@ def _cmd_orphans(args):
         raise CliError(f"orphans query rejected: {_clean(exc)}") from exc
     return _emit(result)
 
+
+
+def _cmd_welcome(_args):
+    """Friendly overview for first-time users: what you can ask and how."""
+    return _emit({
+        "schema": "mdi.welcome/1",
+        "what": "Answer 'why is this Maven dependency in my project?'"
+                " from a local checkout with cited evidence.",
+        "quick_queries": [
+            {"command": "timeline --repo <path> --query <g:a>",
+             "answers": "When was it added? Who added it? What versions over time?"},
+            {"command": "releases --repo <path> --query <g:a>",
+             "answers": "Which tagged releases carry it?"},
+            {"command": "chain --tree <tree.json> --query <g:a>",
+             "answers": "What is the inclusion path from the project root?"},
+            {"command": "security --query <g:a:version>",
+             "answers": "Are there known vulnerabilities for this exact version?"},
+            {"command": "conflicts --tree <tree.json>",
+             "answers": "Are there version conflicts Maven mediated silently?"},
+            {"command": "versions --repo <path>",
+             "answers": "What versions are declared across all modules?"},
+            {"command": "diff --tree-a <a.json> --tree-b <b.json>",
+             "answers": "What changed in the dependency graph between two trees?"},
+            {"command": "usage --jar <lib.jar> --classes <target/classes>",
+             "answers": "Which project classes reference this library?"},
+            {"command": "orphans --repo <path> --classes <target/classes>",
+             "answers": "Which declared dependencies have zero references?"},
+        ],
+        "full_investigation": {
+            "description": "For the complete picture: discover candidates,"
+                           " select one, collect evidence (Maven tree, usage,"
+                           " history), and assemble a cited report.",
+            "workflow": [
+                "discover --repo <path> --query <name>",
+                "select --run-dir <run> --candidate <id>",
+                "collect --run-dir <run> [options]",
+                "report --run-dir <run>",
+            ],
+        },
+        "notes": [
+            "All quick queries are offline (except security, which queries OSV).",
+            "The full workflow creates a run directory; use --expect-revision to continue.",
+            "Diagnostic Maven goals run automatically without approval (standing policy).",
+            "Every answer cites its sources; missing evidence stays explicit.",
+        ],
+    })
 def _cmd_execute(args):
     if (args.capture_operation is None) != (args.capture_approval_file is None):
         raise CliError("--capture-operation and --capture-approval-file must be supplied together")
@@ -2667,6 +2714,8 @@ def _run(argv):
         return _cmd_report(args)
     if args.command == "propose":
         return _cmd_propose(args)
+    if args.command in (None, "welcome"):
+        return _cmd_welcome(args)
     if args.command == "timeline":
         return _cmd_timeline(args)
     if args.command == "releases":
