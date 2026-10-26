@@ -52,7 +52,11 @@ class TimelineLimits:
 
 
 def _git(repo, *args):
-    """One bounded git invocation in the checkout; output bytes on stdout."""
+    """One bounded git invocation in the checkout; output bytes on stdout.
+
+    Raises TimelineError when git exits nonzero (not a repo, bad ref, etc)
+    with the git stderr line included so the caller sees the real cause.
+    """
     argv = ["git", *args]
     env = gitinspect._child_env(os.environ.get("PATH"), os.environ.get("HOME"))
     outcome = gitinspect._run(argv, str(repo), env,
@@ -62,6 +66,10 @@ def _git(repo, *args):
         raise TimelineError(
             f"git {' '.join(args[:2])} failed: {outcome.outcome}"
             + (f" ({outcome.issue})" if outcome.issue else ""))
+    if outcome.rc != 0:
+        stderr_line = outcome.stderr.decode("utf-8", errors="replace").strip().splitlines()
+        detail = stderr_line[-1] if stderr_line else f"exit code {outcome.rc}"
+        raise TimelineError(f"git {' '.join(args[:2])} failed: {detail}")
     return outcome.stdout
 
 
@@ -251,13 +259,16 @@ def _classify(before, after):
 
 
 def _require_git_repo(repo):
-    """Refuse when the path is not inside a git work tree."""
-    from pathlib import Path as _P
-    if not (_P(repo) / ".git").exists():
+    """Refuse when the path is not inside a git work tree (including subdirs)."""
+    outcome = gitinspect._run(
+        ["git", "rev-parse", "--is-inside-work-tree"], str(repo),
+        gitinspect._child_env(os.environ.get("PATH"), os.environ.get("HOME")),
+        timeout_seconds=_GIT_TIMEOUT_SECONDS, max_output_bytes=1024)
+    inside = outcome.outcome == "ok" and outcome.rc == 0 and outcome.stdout.strip() == b"true"
+    if not inside:
         raise TimelineError(
-            f"{repo!r} is not a git repository (no .git found);"
-            " timeline and releases queries need a checkout with git"
-            " history")
+            f"{repo!r} is not inside a git work tree;"
+            " timeline, releases and versions queries need a git checkout")
 
 
 def dependency_timeline(repo, group_id, artifact_id, *, limits=None):

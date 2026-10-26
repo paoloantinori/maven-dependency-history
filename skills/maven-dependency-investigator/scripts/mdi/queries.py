@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 from mdi import gitinspect
-from mdi.timeline import TimelineError, _git, _declaration_entries
+from mdi.timeline import TimelineError, _git, _declaration_entries, _require_git_repo
 from mdi.xmlsafe import UnsafeXML, parse_xml
 from mdi.limits import Limits
 
@@ -114,6 +114,7 @@ def versions(repo, *, group_id=None, artifact_id=None, tree_json=None):
     When a tree JSON is available, GA entries not declared in any POM are
     labeled transitive (present only via a parent dependency).
     """
+    _require_git_repo(repo)
     head_poms = _git(repo, "ls-files", "*pom.xml", "pom.xml").decode(
         "utf-8", errors="surrogateescape").splitlines()
     # Read root POM properties as the base for resolving placeholders across
@@ -361,6 +362,12 @@ def orphans(repo, classes_path, *, maven_repo=None):
     import tempfile
     from mdi.usage_pipeline import inspect_usage
     from mdi import cli as _cli
+    _require_git_repo(repo)
+    import shutil as _shutil
+    if _shutil.which("java") is None:
+        raise TimelineError(
+            "Java is not available on PATH; the orphans tool needs a JDK"
+            " or JRE to run the class reference analyzer.")
     maven_repo = maven_repo or os.path.join(os.path.expanduser("~"), ".m2", "repository")
     head_poms = _git(repo, "ls-files", "*pom.xml", "pom.xml").decode(
         "utf-8", errors="surrogateescape").splitlines()
@@ -403,6 +410,10 @@ def orphans(repo, classes_path, *, maven_repo=None):
                                    scope="production", staging_base=staging,
                                    helper_classpath=classpath,
                                    expected_hashes=hashes)
+        if result.get("status") in ("unavailable", "rejected", "failed"):
+            raise TimelineError(
+                f"the Java helper could not run (status: {result.get('status')});"
+                f" orphans cannot be determined without it")
         refs = result.get("source_refs", [])
         referenced_jars = set()
         for r in refs:
@@ -414,13 +425,11 @@ def orphans(repo, classes_path, *, maven_repo=None):
         for ga in sorted(located):
             if ga not in referenced_jars:
                 reason = ("no static references from project classes")
-                if ga not in {jars_found[i] for i in range(min(len(jars_found), 20))}:
+                checked_jars = set(jars_found[:20])
+                if located[ga] not in checked_jars:
                     reason = "jar beyond the 20-jar helper bound; not checked"
                 orphans.append({"coordinate": ga, "version": declared[ga].get("version", ""),
                                 "reason": reason,
-                                "jar": located[ga]})
-                orphans.append({"coordinate": ga, "version": declared[ga].get("version", ""),
-                                "reason": "no static references from project classes",
                                 "jar": located[ga]})
     return {
         "schema": PRODUCER,
