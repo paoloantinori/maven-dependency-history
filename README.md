@@ -26,6 +26,25 @@ python3 maven-dependency-investigator/scripts/investigate.py
 
 You should see a JSON welcome document listing every available query.
 
+Here is a real query against [apicurio-registry](https://github.com/Apicurio/apicurio-registry) showing when jackson-databind entered the project and how it evolved:
+
+```console
+$ python3 maven-dependency-investigator/scripts/investigate.py timeline \
+    --repo ~/data/repo/work/apicurio-registry \
+    --query com.fasterxml.jackson.core:jackson-databind
+
+{"events": [
+  {"author": "rkubis", "committed_at": "2022-05-27T14:12:05+02:00",
+   "kind": "introduced", "pom": "system-tests/pom.xml",
+   "subject": "Resource and operator managers (#2464)",
+   "version_after": "${version.jackson.core}"},
+  {"author": "Carles Arnal", "committed_at": "2024-04-03T13:51:06+02:00",
+   "kind": "introduced", "pom": "examples/tools/kafkasql-topic-import/pom.xml",
+   "subject": "Add examples main repository (#4374)",
+   "version_after": "2.15.2"}
+ ], "truncated": false, ...}
+```
+
 If you want to use it as an MCP server from Claude Code or another agent, install [uv](https://docs.astral.sh/uv/) and see the MCP section below.
 
 ## Three ways to use it
