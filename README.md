@@ -8,6 +8,26 @@ It collects inspectable evidence for dependency declarations and inclusion paths
 
 The collector, CLI and MCP server passed their recorded reviews and integration tests. The CLI uses file-backed archive inspection with ZIP64 and multi-release jar support. Diagnostic Maven goals run under a standing policy without per-operation approval. All extension tasks are complete.
 
+## Install
+
+**Prerequisites**: Python 3.10+ and git. Optional: [uv](https://docs.astral.sh/uv/) (for the MCP server), a JDK (for `usage` and `orphans`), Maven (for the full investigation workflow).
+
+```sh
+git clone https://github.com/paoloantinori/maven-dependency-history.git
+```
+
+That is all the installation requires: the tool is self-contained. The Python scripts, the Java helper and the pinned dependencies live inside the cloned repo.
+
+Verify it works:
+
+```sh
+python3 maven-dependency-investigator/scripts/investigate.py
+```
+
+You should see a JSON welcome document listing every available query.
+
+If you want to use it as an MCP server from Claude Code or another agent, install [uv](https://docs.astral.sh/uv/) and see the MCP section below.
+
 ## Three ways to use it
 
 ### 1. As an MCP server (preferred for agents)
