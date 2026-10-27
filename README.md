@@ -130,7 +130,17 @@ python3 $INV orphans --repo /path/to/project --classes /path/to/target/classes
 
 Queries accept partial names: `--query kiota` finds all kiota-related artifacts. Version placeholders like `${kiota.libs.version}` are resolved to real version numbers through POM properties.
 
-### 3. As a full investigation workflow
+### 3. As a skill for a coding agent (the original design)
+
+The directory `skills/maven-dependency-investigator/` is a self-contained skill. Point your agent at the skill definition:
+
+> Use the skill at `/path/to/maven-dependency-history/skills/maven-dependency-investigator/SKILL.md`
+
+The agent reads `SKILL.md` and follows it: it clarifies the investigation subject with you, runs the CLI verbs in the right order (`discover` then `select` then `collect` then `report`), obtains your approval only when something can damage (raw capture, file overwrite), and assembles a structured answer whose every claim cites a run-local evidence ID.
+
+This mode differs from the MCP server in that the agent follows the full investigation workflow with the skill's answer shape and hard rules, rather than just calling individual query tools. Use the skill when you want the complete "why is this dependency here?" investigation; use the MCP tools when you want a quick answer to a specific question.
+
+### 4. As a full investigation workflow
 
 For the complete picture with evidence IDs and a cited report:
 
