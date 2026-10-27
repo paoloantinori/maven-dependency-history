@@ -132,11 +132,23 @@ Queries accept partial names: `--query kiota` finds all kiota-related artifacts.
 
 ### 3. As a skill for a coding agent (the original design)
 
-The directory `skills/maven-dependency-investigator/` is a self-contained skill. Point your agent at the skill definition:
+The directory `skills/maven-dependency-investigator/` is a self-contained skill (one directory with the definition, scripts, vendored Java helper and reference docs; no separate files to copy).
+
+For auto-discovery by Claude Code, symlink it into your project's `.claude/skills/`:
+
+```sh
+mkdir -p .claude/skills
+ln -s /path/to/maven-dependency-history/skills/maven-dependency-investigator \
+      .claude/skills/maven-dependency-investigator
+```
+
+Or point your agent at the skill definition directly:
 
 > Use the skill at `/path/to/maven-dependency-history/skills/maven-dependency-investigator/SKILL.md`
 
 The agent reads `SKILL.md` and follows it: it clarifies the investigation subject with you, runs the CLI verbs in the right order (`discover` then `select` then `collect` then `report`), obtains your approval only when something can damage (raw capture, file overwrite), and assembles a structured answer whose every claim cites a run-local evidence ID.
+
+To uninstall, remove the symlink (or the `.claude/skills/maven-dependency-investigator` entry). Nothing else is created outside the repo you cloned.
 
 This mode differs from the MCP server in that the agent follows the full investigation workflow with the skill's answer shape and hard rules, rather than just calling individual query tools. Use the skill when you want the complete "why is this dependency here?" investigation; use the MCP tools when you want a quick answer to a specific question.
 
