@@ -1,0 +1,9 @@
+[allowlist]
+  description = "Global Allowlist"
+
+  # Ignore synthetic test fixture values that look like base64 secrets but
+  # are opaque pagination cursors used to test the advisory tool's
+  # continuation-token handling.
+  regexes = [
+    '''cursor/\+==:v2''',
+  ]

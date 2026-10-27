@@ -198,7 +198,7 @@ class BuildProposalTests(unittest.TestCase):
                     "advisory", advisory_scope(query=query), [], {"n": "osv"}, DISCLOSURE, "r")
 
     def test_advisory_continuation_token_is_opaque_and_bound(self):
-        query = dict(ADVISORY_QUERY, page_token="cursor/+==:v2")
+        query = dict(ADVISORY_QUERY, page_token="cursor/+==:v2")  # notsecret
         record = operations.build_proposal(
             "advisory", advisory_scope(query=query), [], {"n": "osv"}, DISCLOSURE, "r")
         self.assertEqual(record["scope"]["query"], query)
